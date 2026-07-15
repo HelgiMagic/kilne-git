@@ -1,0 +1,21 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": ["kilne", "git"],
+  "ios": {
+    "iosModuleName": "KilneGitNative"
+  },
+  "android": {
+    "androidNamespace": ["kilne", "git"],
+    "androidCxxLibName": "KilneGitNative"
+  },
+  "autolinking": {
+    "Git": {
+      "all": {
+        "language": "c++",
+        "implementationClassName": "HybridGit"
+      }
+    }
+  },
+  "ignorePaths": ["**/node_modules", "**/android/build", "**/third_party"],
+  "gitAttributesGeneratedFlag": true
+}

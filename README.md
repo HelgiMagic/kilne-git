@@ -1,56 +1,123 @@
-# Welcome to your Expo app 👋
+# kilne-git
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A minimal native Obsidian-vault git sync client for Android, built with Expo + Nitro Modules + libgit2.
 
-## Get started
+The whole point: native C++ git via libgit2 (not isomorphic-git) so it's as fast on Android as on a desktop. Manual sync — open the app, tap **Pull**, edit in Obsidian Mobile, tap **Push**.
 
-1. Install dependencies
+## Architecture
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+┌─────────────────────────────────────────────────┐
+│  TypeScript UI (Expo Router)                     │
+│   src/app/…           screens                    │
+│   src/components/…    RepoCard, Field, …         │
+│   src/services/…      git.ts, storage.ts, secure │
+│   src/store.ts        zustand global state       │
+└──────────────────┬──────────────────────────────┘
+                   │ JS calls (via JSI)
+┌──────────────────▼──────────────────────────────┐
+│  kilne-git-native (Nitro Module, C++20)          │
+│   android/…/cpp/HybridGit.cpp  libgit2 wrapper   │
+│   src/Git.nitro.ts             HybridObject spec │
+└──────────────────┬──────────────────────────────┘
+                   │ C calls
+┌──────────────────▼──────────────────────────────┐
+│  libgit2 1.9.0 + mbedTLS 3.6.2 + zlib + parser  │
+│  (built from source via CMake FetchContent)      │
+└─────────────────────────────────────────────────┘
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Files worth reading first:
 
-### Other setup steps
+- `modules/kilne-git-native/src/Git.nitro.ts` — the contract between JS and native.
+- `modules/kilne-git-native/android/src/main/cpp/HybridGit.cpp` — libgit2 calls.
+- `modules/kilne-git-native/android/src/main/cpp/CMakeLists.txt` — how deps are wired.
+- `src/app/repo/[id].tsx` — the Pull / Commit & Push / Status screen.
+- `src/services/git.ts` — high-level wrapper used by the UI.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Build
 
-## Learn more
+### Prerequisites
 
-To learn more about developing your project with Expo, look at the following resources:
+- Node.js LTS + pnpm
+- Android Studio with NDK (side-by-side) ≥ 27 and CMake ≥ 3.22.1
+- A working `JAVA_HOME` (JDK 17+)
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### One-time setup
 
-## Join the community
+```bash
+pnpm install
+pnpm nitrogen        # generates C++/Kotlin specs from Git.nitro.ts
+```
 
-Join our community of developers creating universal apps.
+### Generate the native Android project
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+pnpm exec expo prebuild --platform android
+```
+
+This produces an `android/` folder at the repo root with the Nitro module autolinked.
+
+### Build & run on a device / emulator
+
+```bash
+pnpm exec expo run:android --device
+```
+
+The first build will download libgit2, mbedTLS, zlib and http-parser sources via CMake `FetchContent` (≈100 MB). Cached afterwards.
+
+> Expo Go cannot run this app — Nitro Modules require a custom dev build. `expo run:android` produces one automatically.
+
+### Regenerating specs after editing `Git.nitro.ts`
+
+Any change to the TypeScript spec must be followed by:
+
+```bash
+pnpm nitrogen
+```
+
+The generated files live in `modules/kilne-git-native/nitrogen/generated/`. They're checked in so reviewers can see the diff.
+
+## Usage
+
+1. **Add repository**: tap `+ Add` on the home screen.
+   - Clone URL (HTTPS, e.g. `https://github.com/you/vault.git`)
+   - Personal access token (GitHub: `Settings → Developer settings → Personal access tokens → fine-grained`, scope `Contents: Read and write`)
+   - Local path: defaults to `<documentDirectory>/vaults/<name>`. If you want Obsidian Mobile to see the files, pick a path under shared storage (e.g. `/storage/emulated/0/Documents/vault`).
+2. **Sync**: open the repo detail screen.
+   - **Pull** — fetch + merge upstream.
+   - **Push** — push HEAD without committing.
+   - **Commit all & push** — stage everything, commit with the given message, push.
+   - Status panel shows branch, upstream, ahead/behind, staged/working/untracked/conflicted files.
+
+## Caveats / known limitations
+
+This is an MVP — intentional scope cuts:
+
+- **HTTPS + PAT only**. SSH and OAuth are not wired (libgit2 is built with `USE_SSH=OFF`).
+- **No background sync**. Everything is triggered manually. If you want auto-sync-on-Obsidian-open, that needs a separate foreground service + accessibility / usage-stats plumbing — see `docs/` (TBD).
+- **Merge conflicts**: the UI shows conflicted paths but resolution must happen elsewhere (PC).
+- **Auth callback retries**: capped at 4 attempts to avoid loops. Wrong token → fast fail.
+- **No shallow clone by default**; pass `depth` in `CloneOptions` to enable.
+- **No `.gitignore` editor** in the UI; edit it via Obsidian or another file manager.
+- **CMake hashes are not pinned** in `CMakeLists.txt` for the third-party tarballs. After your first successful build, copy the SHA-256 from the configure log into a `URL_HASH` line to lock it down.
+
+## Security / privacy
+
+- **No telemetry, no analytics, no cloud.** Everything happens on-device.
+- Tokens live in `expo-secure-store` (Android Keystore, hardware-backed when available).
+- Repo configs (URL, branch, path — **not** the token) live in a JSON file in the app's document directory.
+- The native library is built from upstream libgit2 sources — you can `git diff` the pinned tarballs against `github.com/libgit2/libgit2` releases.
+
+## Verifying the build
+
+```bash
+pnpm exec tsc --noEmit   # type-check the TS / TSX
+pnpm lint                # ESLint
+```
+
+C++ side: there's no static-analysis CI yet. The libgit2 calls follow the official docs at <https://libgit2.org/libgit2/HEAD/>.
+
+## License
+
+TBD — pick one before publishing. (The bundled dependencies are all permissive: libgit2 GPL-2.0 with linking exception, mbedTLS Apache-2.0, zlib zlib, http-parser MIT.)

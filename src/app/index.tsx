@@ -1,98 +1,88 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Link } from 'expo-router'
+import { useRouter } from 'expo-router'
+import { useFocusEffect } from 'expo-router'
+import { useCallback } from 'react'
+import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { ThemedText } from '@/components/themed-text'
+import { ThemedView } from '@/components/themed-view'
+import { RepoCard } from '@/components/RepoCard'
+import { Spacing } from '@/constants/theme'
+import { useStore } from '@/store'
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
+export default function RepoListScreen() {
+  const repos = useStore((s) => s.repos)
+  const hydrated = useStore((s) => s.hydrated)
+  const router = useRouter()
+  const insets = useSafeAreaInsets()
+
+  useFocusEffect(
+    useCallback(() => {
+      // Re-hydrate is cheap when already loaded.
+      useStore.getState().hydrate().catch(() => {})
+    }, []),
+  )
+
+  if (!hydrated) {
     return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
+      <ThemedView style={styles.center}>
+        <ActivityIndicator />
+      </ThemedView>
+    )
   }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
 
-export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+      <FlatList
+        contentContainerStyle={{
+          paddingVertical: Spacing.three,
+          paddingBottom: insets.bottom + Spacing.five,
+        }}
+        data={repos}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => router.push({ pathname: '/repo/[id]', params: { id: item.id } })}
+          >
+            <RepoCard repo={item} />
+          </Pressable>
+        )}
+        ItemSeparatorComponent={() => <View style={{ height: Spacing.two }} />}
+        ListEmptyComponent={() => (
+          <View style={styles.empty}>
+            <ThemedText type="title" style={{ textAlign: 'center' }}>
+              No repositories yet
+            </ThemedText>
+            <ThemedText type="small" style={{ textAlign: 'center', marginTop: Spacing.two }}>
+              Add your Obsidian vault git remote to start syncing.
+            </ThemedText>
+          </View>
+        )}
+      />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
+      <Link href="/add" style={[styles.fab, { bottom: insets.bottom + Spacing.three }]}>
+        <ThemedText style={styles.fabText}>+ Add</ThemedText>
+      </Link>
     </ThemedView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
+  container: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { paddingVertical: Spacing.six, paddingHorizontal: Spacing.four, gap: Spacing.two },
+  fab: {
+    position: 'absolute',
+    right: Spacing.three,
+    backgroundColor: '#208AEF',
     paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    paddingVertical: Spacing.three,
+    borderRadius: 999,
+    ...Platform.select({
+      android: { elevation: 4 },
+      ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+    }),
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-});
+  fabText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+})

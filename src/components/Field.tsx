@@ -1,0 +1,34 @@
+﻿import { StyleSheet, View } from 'react-native'
+
+import { ThemedText } from '@/components/themed-text'
+import { Spacing } from '@/constants/theme'
+
+interface Props {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}
+
+/**
+ * A label + value row used in the repo detail screen.
+ * Wraps children in a styled container so any input (text, switch, picker) lines up.
+ */
+export function Field({ label, hint, children }: Props) {
+  return (
+    <View style={styles.container}>
+      <ThemedText type="smallBold">{label}</ThemedText>
+      {hint != null && (
+        <ThemedText type="small" style={styles.hint}>
+          {hint}
+        </ThemedText>
+      )}
+      <View style={styles.value}>{children}</View>
+    </View>
+  )
+}
+
+const styles = StyleSheet.create({
+  container: { gap: Spacing.one, marginBottom: Spacing.three },
+  hint: { opacity: 0.7 },
+  value: { marginTop: Spacing.one },
+})

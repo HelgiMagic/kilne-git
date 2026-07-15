@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    No extra permissions are declared here — git network and filesystem access
+    is gated by the host app's permissions (see kilne-git/app.json).
+  -->
+</manifest>

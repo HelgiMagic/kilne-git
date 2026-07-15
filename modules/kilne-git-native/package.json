@@ -1,0 +1,38 @@
+{
+  "name": "kilne-git-native",
+  "version": "0.1.0",
+  "description": "Native libgit2 bindings for kilne-git (Android, via Nitro Modules)",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "files": [
+    "src",
+    "android",
+    "nitro.json",
+    "expo-module.config.json",
+    "KilneGitNative.podspec",
+    "react-native.config.js"
+  ],
+  "scripts": {
+    "nitrogen": "nitrogen"
+  },
+  "keywords": [
+    "react-native",
+    "nitro",
+    "libgit2",
+    "git",
+    "obsidian"
+  ],
+  "peerDependencies": {
+    "react-native": "*",
+    "react-native-nitro-modules": "*"
+  },
+  "devDependencies": {
+    "nitrogen": "*",
+    "react-native-nitro-modules": "*"
+  },
+  "private": true
+}
+

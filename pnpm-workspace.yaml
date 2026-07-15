@@ -44,3 +44,4 @@ minimumReleaseAgeExclude:
   - expo-system-ui@57.0.1
   - expo-web-browser@57.0.1
   - expo@57.0.6
+  - expo-secure-store@57.0.1
