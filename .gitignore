@@ -1,4 +1,4 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+﻿# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
 node_modules/
@@ -41,3 +41,9 @@ example
 # generated native folders
 /ios
 /android
+
+# Native module / library build outputs (root /android is fully ignored above;
+# local Expo modules still keep their android/ sources)
+**/android/build/
+**/android/.cxx/
+**/android/.gradle/

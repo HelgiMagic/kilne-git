@@ -14,7 +14,9 @@ apply plugin: 'org.jetbrains.kotlin.android'
 apply from: '../nitrogen/generated/android/KilneGitNative+autolinking.gradle'
 
 android {
-  namespace "com.kilne.git"
+  // Must not match the app package (com.kilne.git). Align with Nitrogen's
+  // generated Kotlin package: com.margelo.nitro.{androidNamespace}.
+  namespace "com.margelo.nitro.kilne.git"
   compileSdkVersion safeExtGet("compileSdkVersion", 35)
 
   defaultConfig {

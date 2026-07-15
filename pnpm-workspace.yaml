@@ -1,3 +1,9 @@
+# Flat node_modules (npm-like). Required on Windows: isolated .pnpm junctions
+# resolve to paths past CMAKE_OBJECT_PATH_MAX and break NDK/CMake for
+# nitro-modules / worklets / screens. Docs: https://pnpm.io/settings#nodelinker
+# Note: pnpm 10+ ignores node-linker in .npmrc — settings live here.
+nodeLinker: hoisted
+
 minimumReleaseAgeExclude:
   - '@expo/cli@57.0.8'
   - '@expo/config-plugins@57.0.5'
