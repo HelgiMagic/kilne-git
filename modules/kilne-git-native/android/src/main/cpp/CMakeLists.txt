@@ -109,4 +109,5 @@ target_link_libraries(KilneGitNative PRIVATE
 
 # Pull in Nitrogen's autolinking: adds generated source files + include dirs +
 # links against NitroModules, fbjni and ReactAndroid.
-include(${CMAKE_SOURCE_DIR}/../nitrogen/generated/android/KilneGitNative+autolinking.cmake)
+# Path: android/src/main/cpp → ../../../../ → module root (kilne-git-native/).
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../../nitrogen/generated/android/KilneGitNative+autolinking.cmake)
