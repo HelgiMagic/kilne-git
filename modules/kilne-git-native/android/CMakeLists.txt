@@ -4,6 +4,11 @@ project(KilneGitNative LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Android ships a single .so — we never install deps to a system prefix.
+# Without this, libgit2's install(EXPORT) fails because http-parser / zlibstatic
+# are linked in but not members of any export set.
+set(CMAKE_SKIP_INSTALL_RULES ON)
+
 include(FetchContent)
 
 # ----------------------------------------------------------------------------
