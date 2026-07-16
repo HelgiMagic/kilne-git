@@ -56,6 +56,14 @@ set(ENABLE_PROGRAMS          OFF CACHE BOOL "" FORCE)
 set(MBEDTLS_FATAL_WARNINGS  OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(mbedtls)
 
+# libgit2's FindmbedTLS turns library vars into `-L… -l…`. If we pass the
+# bare target name "mbedtls", PATH is empty → `-L -lmbedtls` and the link fails.
+# Point at the real static archives that mbedtls's CMake produces.
+set(MBEDTLS_LIBRARY      "${mbedtls_BINARY_DIR}/library/libmbedtls.a"    CACHE FILEPATH "" FORCE)
+set(MBEDX509_LIBRARY     "${mbedtls_BINARY_DIR}/library/libmbedx509.a"   CACHE FILEPATH "" FORCE)
+set(MBEDCRYPTO_LIBRARY   "${mbedtls_BINARY_DIR}/library/libmbedcrypto.a" CACHE FILEPATH "" FORCE)
+set(MBEDTLS_INCLUDE_DIR  "${mbedtls_SOURCE_DIR}/include"                 CACHE PATH "" FORCE)
+
 # ---- libgit2 ----------------------------------------------------------------
 FetchContent_Declare(
         libgit2
@@ -78,9 +86,6 @@ set(REGEX_BACKEND           "builtin" CACHE STRING "" FORCE)
 set(USE_ICONV               OFF CACHE BOOL "" FORCE)
 set(USE_NTLMCLIENT          OFF CACHE BOOL "" FORCE)
 set(USE_HTTPS               "mbedTLS" CACHE STRING "" FORCE)
-set(MBEDTLS_LIBRARY         mbedtls    CACHE STRING "" FORCE)
-set(MBEDX509_LIBRARY        mbedx509   CACHE STRING "" FORCE)
-set(MBEDCRYPTO_LIBRARY      mbedcrypto CACHE STRING "" FORCE)
 set(MBEDTLS_INCLUDE_DIR     "${mbedtls_SOURCE_DIR}/include" CACHE PATH "" FORCE)
 FetchContent_MakeAvailable(libgit2)
 
