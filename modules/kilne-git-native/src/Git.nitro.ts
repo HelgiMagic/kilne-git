@@ -181,7 +181,9 @@ export interface Git extends HybridObject<{ ios: 'c++', android: 'c++' }> {
   /**
    * Fetch from the upstream and merge it into HEAD (equivalent of `git pull`).
    * Uses the repository's configured upstream; falls back to "origin <head>" if missing.
-   * Performs a fast-forward when possible, otherwise a real merge with `--no-ff` semantics.
+   * Performs a fast-forward when possible, otherwise a real merge with union
+   * auto-resolve for content conflicts. Commits dirty local changes first when
+   * needed, finishes interrupted merges, and pushes after a merge commit.
    */
   pull(
     localPath: string,

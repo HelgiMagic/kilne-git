@@ -158,7 +158,8 @@ export async function clone(repo: Repo): Promise<CloneResult> {
 
 /**
  * `git pull` on the configured upstream (falls back to origin/<head>).
- * Throws when the merge leaves unresolved conflicts.
+ * Commits dirty local changes if needed, merges with union auto-resolve,
+ * completes any interrupted merge, then pushes when local is ahead.
  * Returns the native result so callers can distinguish "already up to date".
  */
 export async function pull(repo: Repo): Promise<PullResult> {

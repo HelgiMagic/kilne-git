@@ -3,6 +3,7 @@
 #include "GitErrors.hpp"
 #include "GitRaii.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -420,6 +421,250 @@ SignatureOwner makeCommitterSignature(git_repository& repo,
   return takeSig(rawDup);
 }
 
+SignatureOwner defaultSignature(git_repository& repo) {
+  git_signature* rawSig = nullptr;
+  if (git_signature_default(&rawSig, &repo) != 0) {
+    checkGit(git_signature_now(&rawSig, "kilne-git", "kilne-git@localhost"),
+             "signature-default", "");
+  }
+  return takeSig(rawSig);
+}
+
+void writeWorkdirFile(git_repository& repo, const char* relPath, const void* data, size_t len) {
+  const char* workdir = git_repository_workdir(&repo);
+  if (workdir == nullptr || relPath == nullptr) {
+    throw GitError("Merge", "Cannot write resolved file: missing workdir/path.");
+  }
+  const std::string fullPath = std::string(workdir) + relPath;
+  FILE* file = std::fopen(fullPath.c_str(), "wb");
+  if (file == nullptr) {
+    throw GitError("Merge", std::string("Cannot write resolved file: ") + relPath);
+  }
+  if (len > 0 && std::fwrite(data, 1, len, file) != len) {
+    std::fclose(file);
+    throw GitError("Merge", std::string("Failed writing resolved file: ") + relPath);
+  }
+  std::fclose(file);
+}
+
+/**
+ * Auto-resolve remaining index conflicts with a line-oriented union (both sides kept).
+ * Modify/delete: keep the side that still has the file.
+ */
+void resolveIndexConflictsUnion(git_repository& repo, git_index& index) {
+  if (!git_index_has_conflicts(&index)) {
+    return;
+  }
+
+  struct ConflictSides {
+    std::string path;
+    bool hasAncestor{false};
+    bool hasOurs{false};
+    bool hasTheirs{false};
+    git_index_entry ancestor{};
+    git_index_entry ours{};
+    git_index_entry theirs{};
+  };
+
+  std::vector<ConflictSides> conflicts;
+  git_index_conflict_iterator* it = nullptr;
+  checkGit(git_index_conflict_iterator_new(&it, &index), "conflict-iterator", "");
+  const git_index_entry* ancestor = nullptr;
+  const git_index_entry* ours = nullptr;
+  const git_index_entry* theirs = nullptr;
+  while (git_index_conflict_next(&ancestor, &ours, &theirs, it) == 0) {
+    ConflictSides entry{};
+    if (theirs != nullptr && theirs->path != nullptr) {
+      entry.path = theirs->path;
+    } else if (ours != nullptr && ours->path != nullptr) {
+      entry.path = ours->path;
+    } else if (ancestor != nullptr && ancestor->path != nullptr) {
+      entry.path = ancestor->path;
+    } else {
+      continue;
+    }
+    if (ancestor != nullptr) {
+      entry.hasAncestor = true;
+      entry.ancestor = *ancestor;
+    }
+    if (ours != nullptr) {
+      entry.hasOurs = true;
+      entry.ours = *ours;
+    }
+    if (theirs != nullptr) {
+      entry.hasTheirs = true;
+      entry.theirs = *theirs;
+    }
+    conflicts.push_back(std::move(entry));
+  }
+  git_index_conflict_iterator_free(it);
+
+  for (const auto& conflict : conflicts) {
+    if (conflict.hasOurs && conflict.hasTheirs) {
+      git_merge_file_options fileOpts;
+      git_merge_file_options_init(&fileOpts, GIT_MERGE_FILE_OPTIONS_VERSION);
+      fileOpts.favor = GIT_MERGE_FILE_FAVOR_UNION;
+
+      git_merge_file_result fileResult{};
+      checkGit(git_merge_file_from_index(
+                   &fileResult, &repo,
+                   conflict.hasAncestor ? &conflict.ancestor : nullptr,
+                   &conflict.ours, &conflict.theirs, &fileOpts),
+               "merge-file-union", conflict.path);
+      writeWorkdirFile(repo, conflict.path.c_str(), fileResult.ptr, fileResult.len);
+      git_merge_file_result_free(&fileResult);
+      checkGit(git_index_add_bypath(&index, conflict.path.c_str()),
+               "stage-resolved", conflict.path);
+    } else if (conflict.hasOurs) {
+      git_index_entry entry = conflict.ours;
+      GIT_INDEX_ENTRY_STAGE_SET(&entry, 0);
+      checkGit(git_index_conflict_remove(&index, conflict.path.c_str()),
+               "clear-conflict", conflict.path);
+      checkGit(git_index_add(&index, &entry), "stage-ours", conflict.path);
+    } else if (conflict.hasTheirs) {
+      git_blob* rawBlob = nullptr;
+      checkGit(git_blob_lookup(&rawBlob, &repo, &conflict.theirs.id),
+               "lookup-theirs", conflict.path);
+      writeWorkdirFile(repo, conflict.path.c_str(),
+                       git_blob_rawcontent(rawBlob),
+                       static_cast<size_t>(git_blob_rawsize(rawBlob)));
+      git_blob_free(rawBlob);
+      checkGit(git_index_add_bypath(&index, conflict.path.c_str()),
+               "stage-theirs", conflict.path);
+    } else {
+      checkGit(git_index_remove_bypath(&index, conflict.path.c_str()),
+               "remove-both-deleted", conflict.path);
+    }
+  }
+
+  checkGit(git_index_write(&index), "index-write-resolved", "");
+  if (git_index_has_conflicts(&index)) {
+    throw GitError("Merge", "Unable to auto-resolve all merge conflicts.");
+  }
+}
+
+int collectMergeHead(const git_oid* oid, void* payload) {
+  auto* heads = static_cast<std::vector<git_oid>*>(payload);
+  heads->push_back(*oid);
+  return 0;
+}
+
+/** Create a merge commit from the current index + MERGE_HEAD, then clear merge state. */
+void commitMergeFromIndex(git_repository& repo, git_index& index) {
+  resolveIndexConflictsUnion(repo, index);
+
+  git_oid treeOid{};
+  checkGit(git_index_write_tree(&treeOid, &index), "merge-write-tree", "");
+  checkGit(git_index_write(&index), "merge-index-write", "");
+  git_tree* rawTree = nullptr;
+  checkGit(git_tree_lookup(&rawTree, &repo, &treeOid), "merge-lookup-tree", "");
+  TreeOwner tree = takeTree(rawTree);
+
+  git_oid headOid{};
+  checkGit(git_reference_name_to_id(&headOid, &repo, "HEAD"), "merge-head", "HEAD");
+  git_commit* rawHeadCommit = nullptr;
+  checkGit(git_commit_lookup(&rawHeadCommit, &repo, &headOid), "merge-head-lookup", "");
+  CommitOwner headCommit = takeCommit(rawHeadCommit);
+
+  std::vector<git_oid> mergeHeadOids;
+  checkGit(git_repository_mergehead_foreach(&repo, collectMergeHead, &mergeHeadOids),
+           "merge-heads", "");
+  if (mergeHeadOids.empty()) {
+    throw GitError("Merge", "MERGE_HEAD missing; cannot complete merge commit.");
+  }
+
+  std::vector<CommitOwner> mergeCommits;
+  std::vector<const git_commit*> parents;
+  parents.push_back(headCommit.get());
+  mergeCommits.reserve(mergeHeadOids.size());
+  for (const git_oid& oid : mergeHeadOids) {
+    git_commit* raw = nullptr;
+    checkGit(git_commit_lookup(&raw, &repo, &oid), "merge-parent-lookup", "");
+    mergeCommits.push_back(takeCommit(raw));
+    parents.push_back(mergeCommits.back().get());
+  }
+
+  SignatureOwner sig = defaultSignature(repo);
+  git_oid commitOid{};
+  checkGit(git_commit_create(&commitOid, &repo, "HEAD",
+                             sig.get(), sig.get(), nullptr,
+                             "Merge upstream", tree.get(),
+                             parents.size(), parents.data()),
+           "merge-commit", "");
+  checkGit(git_repository_state_cleanup(&repo), "merge-cleanup", "");
+}
+
+/** Stage + commit local dirty changes so merge/FF checkout is not blocked. */
+bool commitDirtyChanges(git_repository& repo, const char* message) {
+  git_index* rawIndex = nullptr;
+  checkGit(git_repository_index(&rawIndex, &repo), "index", "");
+  IndexOwner index = takeIndex(rawIndex);
+
+  git_strarray paths = {nullptr, 0};
+  checkGit(git_index_add_all(index.get(), &paths, 0, nullptr, nullptr), "add-all", "");
+  checkGit(git_index_write(index.get()), "index-write", "");
+
+  git_oid headCommitOid{};
+  const bool hasHead =
+      git_reference_name_to_id(&headCommitOid, &repo, "HEAD") == 0;
+
+  CommitOwner parentCommit(nullptr, GitPtrDeleters::commit);
+  TreeOwner headTree(nullptr, GitPtrDeleters::tree);
+  if (hasHead) {
+    git_commit* rawParent = nullptr;
+    checkGit(git_commit_lookup(&rawParent, &repo, &headCommitOid), "lookup-parent", "");
+    parentCommit = takeCommit(rawParent);
+    git_tree* rawHeadTree = nullptr;
+    checkGit(git_commit_tree(&rawHeadTree, parentCommit.get()), "head-tree", "");
+    headTree = takeTree(rawHeadTree);
+  }
+
+  git_diff_options diffOpts;
+  git_diff_options_init(&diffOpts, GIT_DIFF_OPTIONS_VERSION);
+  git_diff* rawDiff = nullptr;
+  checkGit(git_diff_tree_to_index(&rawDiff, &repo,
+                                  hasHead ? headTree.get() : nullptr,
+                                  index.get(), &diffOpts),
+           "diff", "");
+  const size_t filesChanged = git_diff_num_deltas(rawDiff);
+  git_diff_free(rawDiff);
+  if (filesChanged == 0) {
+    return false;
+  }
+
+  git_oid newTreeOid{};
+  checkGit(git_index_write_tree(&newTreeOid, index.get()), "write-tree", "");
+  git_tree* rawNewTree = nullptr;
+  checkGit(git_tree_lookup(&rawNewTree, &repo, &newTreeOid), "lookup-tree", "");
+  TreeOwner newTree = takeTree(rawNewTree);
+
+  SignatureOwner sig = defaultSignature(repo);
+  std::vector<const git_commit*> parentPtrs;
+  if (hasHead) {
+    parentPtrs.push_back(parentCommit.get());
+  }
+  git_oid commitOid{};
+  checkGit(git_commit_create(&commitOid, &repo, "HEAD",
+                             sig.get(), sig.get(), nullptr,
+                             message, newTree.get(),
+                             parentPtrs.size(), parentPtrs.data()),
+           "commit-dirty", "");
+  return true;
+}
+
+size_t aheadOfUpstream(git_repository& repo, const git_oid& upstreamOid) {
+  git_oid localOid{};
+  if (git_reference_name_to_id(&localOid, &repo, "HEAD") != 0) {
+    return 0;
+  }
+  size_t ahead = 0;
+  size_t behind = 0;
+  if (git_graph_ahead_behind(&ahead, &behind, &repo, &localOid, &upstreamOid) != 0) {
+    return 0;
+  }
+  return ahead;
+}
+
 }  // namespace
 
 HybridGit::HybridGit() : HybridObject(TAG) {
@@ -528,6 +773,24 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
         auto repo = openRepo(localPath);
         AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
 
+        PullResult result{};
+        result.fastForwarded = false;
+        result.merged = false;
+        result.commitsFetched = 0;
+        result.conflicted = {};
+
+        // Finish an interrupted merge (e.g. previous pull left conflicts on disk).
+        if (git_repository_state(repo.get()) == GIT_REPOSITORY_STATE_MERGE) {
+          git_index* rawIndex = nullptr;
+          checkGit(git_repository_index(&rawIndex, repo.get()), "merge-index", "");
+          IndexOwner index = takeIndex(rawIndex);
+          commitMergeFromIndex(*repo, *index);
+          result.merged = true;
+        } else {
+          // Commit local edits first so merge/FF checkout cannot be blocked.
+          commitDirtyChanges(*repo, "auto: local changes before pull");
+        }
+
         AnnotatedCommitOwner upstreamCommit = fetchUpstream(*repo, auth);
 
         git_oid localOid{};
@@ -538,12 +801,7 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
         size_t behind = 0;
         checkGit(git_graph_ahead_behind(&ahead, &behind, repo.get(), &localOid, upstreamOid),
                  "ahead-behind", "");
-
-        PullResult result{};
-        result.fastForwarded = false;
-        result.merged = false;
         result.commitsFetched = static_cast<double>(behind);
-        result.conflicted = {};
 
         if (behind == 0) {
           // Recover vaults stuck by the old FF order (HEAD moved, files did not).
@@ -551,10 +809,7 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
             result.fastForwarded = true;
             result.commitsFetched = 1;
           }
-          return result;
-        }
-
-        if (ahead == 0) {
+        } else if (ahead == 0) {
           // Fast-forward: checkout the upstream tree WHILE HEAD still points at
           // the old commit, then move the branch ref. Moving HEAD first makes
           // GIT_CHECKOUT_SAFE treat the old worktree as dirty local edits and
@@ -589,73 +844,28 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
           checkGit(git_repository_set_head(repo.get(), branchRef.c_str()),
                    "fast-forward-set-head", *branch);
           result.fastForwarded = true;
-          return result;
+        } else {
+          const git_annotated_commit* heads[] = {upstreamCommit.get()};
+          git_merge_options mergeOpts;
+          git_merge_options_init(&mergeOpts, GIT_MERGE_OPTIONS_VERSION);
+          // Auto-resolve content conflicts by keeping both sides (line-oriented union).
+          mergeOpts.file_favor = GIT_MERGE_FILE_FAVOR_UNION;
+          git_checkout_options checkoutOpts;
+          git_checkout_options_init(&checkoutOpts, GIT_CHECKOUT_OPTIONS_VERSION);
+          checkoutOpts.checkout_strategy = GIT_CHECKOUT_SAFE;
+          checkGit(git_merge(repo.get(), heads, 1, &mergeOpts, &checkoutOpts), "merge", "");
+
+          git_index* rawIndex = nullptr;
+          checkGit(git_repository_index(&rawIndex, repo.get()), "merge-index", "");
+          IndexOwner index = takeIndex(rawIndex);
+          commitMergeFromIndex(*repo, *index);
+          result.merged = true;
         }
 
-        const git_annotated_commit* heads[] = {upstreamCommit.get()};
-        git_merge_options mergeOpts;
-        git_merge_options_init(&mergeOpts, GIT_MERGE_OPTIONS_VERSION);
-        git_checkout_options checkoutOpts;
-        git_checkout_options_init(&checkoutOpts, GIT_CHECKOUT_OPTIONS_VERSION);
-        checkoutOpts.checkout_strategy = GIT_CHECKOUT_SAFE;
-        checkGit(git_merge(repo.get(), heads, 1, &mergeOpts, &checkoutOpts), "merge", "");
-
-        IndexOwner index(nullptr, GitPtrDeleters::index);
-        git_index* rawIndex = nullptr;
-        checkGit(git_repository_index(&rawIndex, repo.get()), "merge-index", "");
-        index = takeIndex(rawIndex);
-
-        if (git_index_has_conflicts(index.get())) {
-          git_index_conflict_iterator* it = nullptr;
-          if (git_index_conflict_iterator_new(&it, index.get()) == 0) {
-            const git_index_entry* ancestor = nullptr;
-            const git_index_entry* ours = nullptr;
-            const git_index_entry* theirs = nullptr;
-            while (git_index_conflict_next(&ancestor, &ours, &theirs, it) == 0) {
-              if (theirs != nullptr && theirs->path != nullptr) {
-                result.conflicted.push_back(theirs->path);
-              } else if (ours != nullptr && ours->path != nullptr) {
-                result.conflicted.push_back(ours->path);
-              }
-            }
-            git_index_conflict_iterator_free(it);
-          }
-          // Leave merge state on disk so the user can resolve conflicts.
-          return result;
+        // After a merge, push so one Pull finishes the sync (resolve + publish).
+        if (result.merged && aheadOfUpstream(*repo, *upstreamOid) > 0) {
+          pushHead(*repo, auth);
         }
-
-        git_signature* rawSig = nullptr;
-        if (git_signature_default(&rawSig, repo.get()) != 0) {
-          checkGit(git_signature_now(&rawSig, "kilne-git", "kilne-git@localhost"),
-                   "merge-signature", "");
-        }
-        SignatureOwner sig = takeSig(rawSig);
-
-        git_oid treeOid{};
-        checkGit(git_index_write_tree(&treeOid, index.get()), "merge-write-tree", "");
-        checkGit(git_index_write(index.get()), "merge-index-write", "");
-        git_tree* rawTree = nullptr;
-        checkGit(git_tree_lookup(&rawTree, repo.get(), &treeOid), "merge-lookup-tree", "");
-        TreeOwner tree = takeTree(rawTree);
-
-        git_commit* rawHeadCommit = nullptr;
-        checkGit(git_commit_lookup(&rawHeadCommit, repo.get(), &localOid), "merge-head", "");
-        CommitOwner headCommit = takeCommit(rawHeadCommit);
-
-        const git_oid* upstreamCommitOid = git_annotated_commit_id(upstreamCommit.get());
-        git_commit* rawUpstreamCommit = nullptr;
-        checkGit(git_commit_lookup(&rawUpstreamCommit, repo.get(), upstreamCommitOid),
-                 "merge-upstream", "");
-        CommitOwner upstreamCommitObj = takeCommit(rawUpstreamCommit);
-
-        const git_commit* parents[] = {headCommit.get(), upstreamCommitObj.get()};
-        git_oid commitOid{};
-        checkGit(git_commit_create(&commitOid, repo.get(), "HEAD",
-                                   sig.get(), sig.get(), nullptr,
-                                   "Merge upstream", tree.get(), 2, parents),
-                 "merge-commit", "");
-        checkGit(git_repository_state_cleanup(repo.get()), "merge-cleanup", "");
-        result.merged = true;
         return result;
       });
 }
