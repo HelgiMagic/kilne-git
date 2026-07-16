@@ -91,7 +91,11 @@ export async function cloneRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'cloning' })
   try {
-    await git.clone(repo)
+    const result = await git.clone(repo)
+    // Persist the branch that was actually checked out (remote HEAD when none set).
+    if (result.branch.length > 0 && result.branch !== 'HEAD' && result.branch !== repo.branch) {
+      await useStore.getState().upsertRepo({ ...repo, branch: result.branch })
+    }
     setDone(repo.id, 'Clone complete')
     await persistLastSynced(repo.id)
   } catch (e) {

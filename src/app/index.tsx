@@ -39,6 +39,7 @@ export default function RepoListScreen() {
           paddingVertical: Spacing.three,
           paddingBottom: insets.bottom + Spacing.five,
         }}
+        showsVerticalScrollIndicator={false}
         data={repos}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (

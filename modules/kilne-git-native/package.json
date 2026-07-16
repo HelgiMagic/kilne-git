@@ -10,8 +10,8 @@
   "files": [
     "src",
     "android",
+    "nitrogen",
     "nitro.json",
-    "expo-module.config.json",
     "KilneGitNative.podspec",
     "react-native.config.js"
   ],

@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native'
 
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
+import { displayLocalPath } from '@/services/storage'
 
 interface Props {
   repo: Repo
@@ -69,9 +70,10 @@ function StatusPill({ kind, isError, busy }: { kind: SyncState['kind']; isError:
 }
 
 function shortPath(path: string): string {
-  const segments = path.split('/')
+  const display = displayLocalPath(path)
+  const segments = display.split('/')
   if (segments.length <= 3) {
-    return path
+    return display
   }
   return '…/' + segments.slice(-2).join('/')
 }

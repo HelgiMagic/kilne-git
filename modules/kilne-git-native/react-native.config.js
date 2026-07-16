@@ -1,14 +1,20 @@
 /**
- * React Native CLI config so autolinking picks up this local module.
- * See https://github.com/react-native-community/cli/blob/master/docs/autolinking.md
+ * React Native CLI config so autolinking picks up this local Nitro module.
+ * Registers KilneGitNativePackage, whose static init loads libKilneGitNative.so.
+ *
+ * https://github.com/react-native-community/cli/blob/main/docs/dependencies.md
  */
 module.exports = {
-  dependencies: {
-    'kilne-git-native': {
-      root: __dirname,
-    },
-    'react-native-nitro-modules': {
-      root: path.join(__dirname, '..', 'node_modules', 'react-native-nitro-modules'),
+  dependency: {
+    platforms: {
+      android: {
+        packageImportPath:
+          'import com.margelo.nitro.kilne.git.KilneGitNativePackage;',
+        packageInstance: 'new KilneGitNativePackage()',
+        // CMake is owned by this module's build.gradle (externalNativeBuild),
+        // not by RN Fabric codegen — leave cmakeListsPath unset.
+      },
+      ios: {},
     },
   },
 };

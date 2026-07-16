@@ -83,7 +83,8 @@ The generated files live in `modules/kilne-git-native/nitrogen/generated/`. They
 1. **Add repository**: tap `+ Add` on the home screen.
    - Clone URL (HTTPS, e.g. `https://github.com/you/vault.git`)
    - Personal access token (GitHub: `Settings → Developer settings → Personal access tokens → fine-grained`, scope `Contents: Read and write`)
-   - Local path: defaults to `<documentDirectory>/vaults/<name>`. If you want Obsidian Mobile to see the files, pick a path under shared storage (e.g. `/storage/emulated/0/Documents/vault`).
+   - Local path: defaults to `Documents/<name>` on shared phone storage (Obsidian can open it). You can type a short path like `Documents/my-vault` — no need for `/storage/emulated/0/…`.
+   - On Android 11+, the app will ask you to enable **All files access** for kilne-git so it can write outside its private folder.
 2. **Sync**: open the repo detail screen.
    - **Pull** — fetch + merge upstream.
    - **Push** — push HEAD without committing.

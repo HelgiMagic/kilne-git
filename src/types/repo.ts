@@ -12,7 +12,10 @@ export interface Repo {
   name: string
   /** HTTPS clone URL, e.g. `https://github.com/user/vault.git`. */
   url: string
-  /** Default branch, e.g. `main`. Used for clone + as fallback when no upstream is set. */
+  /**
+   * Default branch, e.g. `main` or `master`.
+   * Empty on add → clone checks out the remote HEAD, then the real name is stored.
+   */
   branch: string
   /** Absolute filesystem path to the working tree on the device. */
   localPath: string

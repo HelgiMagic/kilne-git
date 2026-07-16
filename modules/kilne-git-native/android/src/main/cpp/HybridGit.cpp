@@ -346,12 +346,17 @@ SignatureOwner makeCommitterSignature(git_repository& repo,
 
 }  // namespace
 
-HybridGit::HybridGit() {
+HybridGit::HybridGit() : HybridObject(TAG) {
   std::call_once(g_libgit2InitOnce, []() {
     const int rc = git_libgit2_init();
     if (rc < 0) {
       throwGitError("Init", "git_libgit2_init() failed", rc);
     }
+    // Shared storage on Android (e.g. /storage/emulated/0/Documents) is owned by
+    // a media/sdcard UID, not the app. libgit2's default ownership check then
+    // fails with GIT_EOWNER (-36). Safe here: vault paths are user-chosen and
+    // we already require All files access for those locations.
+    git_libgit2_opts(GIT_OPT_SET_OWNER_VALIDATION, 0);
     // Build-host CERT_LOCATION (see android/CMakeLists.txt) does not exist on
     // device. Load Android's system CA store so HTTPS verify works.
     static const char* const kCaDirs[] = {
@@ -427,7 +432,11 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
 
         CloneResult result{};
         result.path = localPath;
-        result.branch = branchOwned.empty() ? "HEAD" : branchOwned;
+        // Prefer the actual checked-out branch (remote HEAD when none was requested).
+        auto head = readHeadBranch(*repo);
+        result.branch = head.has_value()
+            ? *head
+            : (branchOwned.empty() ? "HEAD" : branchOwned);
         result.receivedObjects = 0;
         return result;
       });

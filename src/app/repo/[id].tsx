@@ -20,6 +20,7 @@ import { IDLE_SYNC } from '@/types/repo'
 import { type StatusResult } from 'kilne-git-native'
 import * as git from '@/services/git'
 import { commitAndPushRepo, pullRepo, pushRepo } from '@/hooks/use-sync'
+import { displayLocalPath } from '@/services/storage'
 
 export default function RepoDetailScreen() {
   const params = useGlobalSearchParams<{ id: string }>()
@@ -102,7 +103,7 @@ export default function RepoDetailScreen() {
     if (!repo) return
     Alert.alert(
       'Remove repository?',
-      `This deletes the config and stored token. The cloned files at ${repo.localPath} stay on disk.`,
+      `This deletes the config and stored token. The cloned files at ${displayLocalPath(repo.localPath)} stay on disk.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -120,6 +121,7 @@ export default function RepoDetailScreen() {
   return (
     <ScrollView
       contentContainerStyle={{ paddingVertical: Spacing.three, paddingBottom: insets.bottom + Spacing.five }}
+      showsVerticalScrollIndicator={false}
     >
       <ThemedText type="title">{repo.name}</ThemedText>
       <ThemedText type="small" style={{ opacity: 0.7, marginBottom: Spacing.three }}>

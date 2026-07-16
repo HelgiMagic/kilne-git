@@ -4,12 +4,29 @@
  * pass paths / credentials around manually.
  */
 
-import { getGit, type Git, type GitCredentials, type StatusResult } from 'kilne-git-native'
+import {
+  getGit,
+  type CloneResult,
+  type Git,
+  type GitCredentials,
+  type StatusResult,
+} from 'kilne-git-native'
 import { Directory } from 'expo-file-system'
 
 import type { Repo } from '@/types/repo'
 import { loadToken } from '@/services/secure'
-import { ensureDirectoryExists } from '@/services/storage'
+import {
+  ensureDirectoryExists,
+  resolveLocalPath,
+  toFileUri,
+  toFilesystemPath,
+} from '@/services/storage'
+
+/** Absolute FS path for libgit2 — strips a `file://` URI if the caller stored one. */
+function nativePath(repoOrPath: Repo | string): string {
+  const raw = typeof repoOrPath === 'string' ? repoOrPath : repoOrPath.localPath
+  return resolveLocalPath(toFilesystemPath(raw))
+}
 
 /**
  * Maps a stored {@link Repo} to the credentials expected by the native layer.
@@ -36,8 +53,10 @@ function commitOptions(repo: Repo) {
 }
 
 function cloneOptions(repo: Repo) {
+  const branch = repo.branch.trim()
   return {
-    branch: repo.branch || undefined,
+    // Omit branch so libgit2 checks out the remote HEAD (main, master, …).
+    branch: branch.length > 0 ? branch : undefined,
     insecure: repo.insecure,
   }
 }
@@ -65,24 +84,75 @@ export function _resetGitForTests(): void {
 
 /** `git init` at the given path. Throws if the directory is a repo already. */
 export async function init(localPath: string): Promise<string> {
-  return await git().init(localPath)
+  return await git().init(nativePath(localPath))
+}
+
+/** Best-effort recursive delete — used to unwind a failed / partial clone. */
+function removeDirectoryBestEffort(path: string): void {
+  try {
+    const dir = new Directory(toFileUri(path))
+    if (dir.exists) {
+      dir.delete()
+    }
+  } catch {
+    // ignore — caller still surfaces the original error
+  }
 }
 
 /**
- * Clone a repository. Creates `localPath` if missing, throwing away any existing
- * contents when they are empty.
+ * Leftover from a previous failed clone (ownership / network / etc.).
+ * Safe to wipe: has a `.git` dir but is not openable as a repository.
+ * Never deletes a path that only has user files (no `.git`).
  */
-export async function clone(repo: Repo): Promise<void> {
-  const dir = new Directory(repo.localPath)
+async function isPartialFailedClone(path: string, dir: Directory): Promise<boolean> {
+  const entries = dir.list()
+  if (!entries.some((entry) => entry.name === '.git')) {
+    return false
+  }
+  try {
+    return !(await git().isRepository(path))
+  } catch {
+    return true
+  }
+}
+
+/**
+ * Clone a repository. Creates `localPath` if missing.
+ * On failure, removes the destination when we created it or cleared a partial clone,
+ * so retry does not hit “Destination is not empty”.
+ * Returns the clone result (including the branch that was actually checked out).
+ */
+export async function clone(repo: Repo): Promise<CloneResult> {
+  const path = nativePath(repo)
+  const dir = new Directory(toFileUri(path))
+  let cleanupOnFailure = false
+
   if (dir.exists) {
     const entries = dir.list()
     if (entries.length > 0) {
-      throw new Error(`Destination is not empty: ${repo.localPath}`)
+      if (await isPartialFailedClone(path, dir)) {
+        removeDirectoryBestEffort(path)
+        await ensureDirectoryExists(path)
+        cleanupOnFailure = true
+      } else {
+        throw new Error(`Destination is not empty: ${path}`)
+      }
+    } else {
+      cleanupOnFailure = true
     }
   } else {
-    await ensureDirectoryExists(repo.localPath)
+    await ensureDirectoryExists(path)
+    cleanupOnFailure = true
   }
-  await git().clone(repo.url, repo.localPath, await toCredentials(repo), cloneOptions(repo))
+
+  try {
+    return await git().clone(repo.url, path, await toCredentials(repo), cloneOptions(repo))
+  } catch (e) {
+    if (cleanupOnFailure) {
+      removeDirectoryBestEffort(path)
+    }
+    throw e
+  }
 }
 
 /**
@@ -90,7 +160,7 @@ export async function clone(repo: Repo): Promise<void> {
  * Throws when the merge leaves unresolved conflicts.
  */
 export async function pull(repo: Repo): Promise<void> {
-  const result = await git().pull(repo.localPath, await toCredentials(repo), options(repo))
+  const result = await git().pull(nativePath(repo), await toCredentials(repo), options(repo))
   if (result.conflicted.length > 0) {
     throw new Error(
       `Merge conflicts in ${result.conflicted.length} file(s): ${result.conflicted.slice(0, 5).join(', ')}`,
@@ -101,7 +171,7 @@ export async function pull(repo: Repo): Promise<void> {
 /** Stage everything + commit + push. Throws if the push fails. */
 export async function commitAllAndPush(repo: Repo, message: string): Promise<void> {
   const result = await git().commitAllAndPush(
-    repo.localPath,
+    nativePath(repo),
     message,
     await toCredentials(repo),
     commitOptions(repo),
@@ -114,7 +184,7 @@ export async function commitAllAndPush(repo: Repo, message: string): Promise<voi
 
 /** `git push HEAD` without staging/committing. */
 export async function push(repo: Repo): Promise<void> {
-  const result = await git().push(repo.localPath, await toCredentials(repo), options(repo))
+  const result = await git().push(nativePath(repo), await toCredentials(repo), options(repo))
   if (!result.pushed) {
     throw new Error('Push failed')
   }
@@ -122,12 +192,12 @@ export async function push(repo: Repo): Promise<void> {
 
 /** Full status of the repo. */
 export async function status(repo: Repo): Promise<StatusResult> {
-  return await git().status(repo.localPath)
+  return await git().status(nativePath(repo))
 }
 
 /** Cheap repo-existence check. */
 export async function isRepository(localPath: string): Promise<boolean> {
-  return await git().isRepository(localPath)
+  return await git().isRepository(nativePath(localPath))
 }
 
 /** libgit2 version string, surfaced for diagnostics. */

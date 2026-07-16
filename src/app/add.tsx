@@ -19,7 +19,13 @@ import { Spacing } from '@/constants/theme'
 import { useStore } from '@/store'
 import { type Repo } from '@/types/repo'
 import { cloneRepo } from '@/hooks/use-sync'
-import { documentDirectoryUri } from '@/services/storage'
+import { defaultVaultLocalPath, resolveLocalPath } from '@/services/storage'
+import {
+  ensureSharedStorageWriteAccess,
+  isSharedStorageAccessError,
+  isUnderSharedStorage,
+  openAllFilesAccessSettings,
+} from '@/services/shared-storage-access'
 
 interface FormState {
   name: string
@@ -34,14 +40,17 @@ interface FormState {
 }
 
 function defaultLocalPath(name: string): string {
-  const docDir = documentDirectoryUri()
-  const safe = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'vault'
-  return `${docDir}vaults/${safe}`
+  return defaultVaultLocalPath(name)
 }
 
 function deriveName(url: string): string {
   const match = url.match(/[/:]([^/]+?)(?:\.git)?$/)
   return match?.[1] ?? 'vault'
+}
+
+function isAutoLocalPath(path: string, name: string): boolean {
+  const trimmed = path.trim()
+  return trimmed.length === 0 || trimmed === defaultLocalPath(name)
 }
 
 export default function AddRepoScreen() {
@@ -53,7 +62,7 @@ export default function AddRepoScreen() {
   const [form, setForm] = useState<FormState>({
     name: '',
     url: '',
-    branch: 'main',
+    branch: '',
     localPath: '',
     username: 'x-access-token',
     token: '',
@@ -72,24 +81,63 @@ export default function AddRepoScreen() {
       const derived = deriveName(value)
       if (derived !== 'vault') {
         set('name', derived)
-        set('localPath', defaultLocalPath(derived))
+        if (isAutoLocalPath(form.localPath, form.name)) {
+          set('localPath', defaultLocalPath(derived))
+        }
       }
     }
   }
 
+  function onNameChange(value: string) {
+    const prevName = form.name
+    set('name', value)
+    if (isAutoLocalPath(form.localPath, prevName)) {
+      set('localPath', defaultLocalPath(value))
+    }
+  }
+
+  function promptSharedStorageAccess() {
+    Alert.alert(
+      'Storage access needed',
+      'Android will not show a normal permission popup for this. Open settings, enable “All files access” (or “Allow access to manage all files”) for kilne-git, then tap Clone again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open settings',
+          onPress: () => {
+            void openAllFilesAccessSettings()
+          },
+        },
+      ],
+    )
+  }
+
   async function onSave() {
-    if (form.url.trim().length === 0 || form.localPath.trim().length === 0) {
-      Alert.alert('Missing fields', 'URL and local path are required.')
+    const name = form.name.trim() || deriveName(form.url)
+    const localPathInput = form.localPath.trim() || defaultLocalPath(name)
+    if (form.url.trim().length === 0) {
+      Alert.alert('Missing fields', 'URL is required.')
       return
     }
+
+    const absolutePath = resolveLocalPath(localPathInput)
+    if (isUnderSharedStorage(absolutePath)) {
+      const canWrite = await ensureSharedStorageWriteAccess()
+      if (!canWrite) {
+        promptSharedStorageAccess()
+        return
+      }
+    }
+
     setSaving(true)
     let createdId: string | null = null
     try {
       const repo: Repo = await upsertRepo({
-        name: form.name || deriveName(form.url),
+        name,
         url: form.url.trim(),
-        branch: form.branch.trim() || 'main',
-        localPath: form.localPath.trim(),
+        // Empty → clone uses remote HEAD (main, master, …), then we persist it.
+        branch: form.branch.trim(),
+        localPath: absolutePath,
         username: form.username.trim() || 'x-access-token',
         insecure: form.insecure,
         authorName: form.authorName.trim(),
@@ -110,10 +158,14 @@ export default function AddRepoScreen() {
           // best-effort cleanup
         }
       }
-      Alert.alert(
-        'Clone failed',
-        e instanceof Error ? e.message : String(e),
-      )
+      if (isSharedStorageAccessError(e)) {
+        promptSharedStorageAccess()
+      } else {
+        Alert.alert(
+          'Clone failed',
+          e instanceof Error ? e.message : String(e),
+        )
+      }
     } finally {
       setSaving(false)
     }
@@ -127,6 +179,7 @@ export default function AddRepoScreen() {
           paddingBottom: insets.bottom + Spacing.five,
         }}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <Field label="Clone URL" hint="HTTPS URL, e.g. https://github.com/you/vault.git">
           <TextInput
@@ -144,23 +197,26 @@ export default function AddRepoScreen() {
           <TextInput
             style={styles.input}
             value={form.name}
-            onChangeText={(v) => set('name', v)}
+            onChangeText={onNameChange}
             placeholder="vault"
           />
         </Field>
 
-        <Field label="Branch" hint="Defaults to main.">
+        <Field label="Branch" hint="Leave empty to use the remote default (main, master, …).">
           <TextInput
             style={styles.input}
             value={form.branch}
             onChangeText={(v) => set('branch', v)}
-            placeholder="main"
+            placeholder="remote default"
             autoCapitalize="none"
             autoCorrect={false}
           />
         </Field>
 
-        <Field label="Local path" hint="Where to clone on device. Obsidian must be able to read this folder.">
+        <Field
+          label="Local path"
+          hint="Under phone storage — e.g. Documents/my-vault. On Android 11+ enable All files access in system settings (no popup). Obsidian can open this folder."
+        >
           <TextInput
             style={styles.input}
             value={form.localPath}
