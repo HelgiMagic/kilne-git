@@ -49,7 +49,7 @@ FetchContent_MakeAvailable(mbedtls)
 # ---- libgit2 ----------------------------------------------------------------
 FetchContent_Declare(
         libgit2
-        URL https://github.com/libgit2/libgit2/releases/download/v1.9.0/libgit2-1.9.0.tar.gz
+        URL https://github.com/libgit2/libgit2/archive/refs/tags/v1.9.0.tar.gz
 )
 set(BUILD_SHARED_LIBS       OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTS             OFF CACHE BOOL "" FORCE)
