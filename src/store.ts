@@ -29,10 +29,22 @@ interface AppState {
   setSync: (id: string, state: SyncState) => void
 }
 
+function fillRandomBytes(bytes: Uint8Array): void {
+  // Hermes often has no global `crypto`; Math.random is fine for local repo ids.
+  const webCrypto = globalThis.crypto
+  if (webCrypto?.getRandomValues != null) {
+    webCrypto.getRandomValues(bytes)
+    return
+  }
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = Math.floor(Math.random() * 256)
+  }
+}
+
 function makeId(): string {
-  // Lightweight UUID v4. React Native ships crypto.getRandomValues.
+  // Lightweight UUID v4 for local repo ids (not a security boundary).
   const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
+  fillRandomBytes(bytes)
   bytes[6] = (bytes[6] & 0x0f) | 0x40
   bytes[8] = (bytes[8] & 0x3f) | 0x80
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
