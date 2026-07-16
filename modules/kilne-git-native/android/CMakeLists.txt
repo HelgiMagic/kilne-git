@@ -108,11 +108,15 @@ find_library(LOG_LIB log)
 
 # Plain (non-keyword) signature — Nitrogen's autolinking.cmake also links
 # without PRIVATE/PUBLIC, and CMake forbids mixing the two styles on one target.
+#
+# Link `libgit2package` (not the OBJECT target `libgit2`) — the package target
+# embeds util + xdiff objects; linking only `libgit2` leaves git_str_*/git_futils_*
+# undefined at final .so link time.
 target_link_libraries(
         KilneGitNative
         ${LOG_LIB}
         android
-        libgit2
+        libgit2package
         http-parser
         zlibstatic
         mbedtls
