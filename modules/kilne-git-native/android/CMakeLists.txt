@@ -87,6 +87,14 @@ set(USE_ICONV               OFF CACHE BOOL "" FORCE)
 set(USE_NTLMCLIENT          OFF CACHE BOOL "" FORCE)
 set(USE_HTTPS               "mbedTLS" CACHE STRING "" FORCE)
 set(MBEDTLS_INCLUDE_DIR     "${mbedtls_SOURCE_DIR}/include" CACHE PATH "" FORCE)
+# libgit2's mbedTLS backend auto-detects CA certs via the host `openssl` CLI.
+# That fails on Windows (no openssl) and is wrong for Android cross-compiles
+# anyway (host path ≠ device path). Point CERT_LOCATION at this directory so
+# configure's EXISTS check passes; use forward slashes so the baked-in
+# GIT_DEFAULT_CERT_LOCATION C string is valid on Windows hosts. At runtime the
+# path will not exist on device — HybridGit loads Android's system CA store.
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_LIST_DIR}" _kilne_cert_location)
+set(CERT_LOCATION "${_kilne_cert_location}" CACHE FILEPATH "" FORCE)
 FetchContent_MakeAvailable(libgit2)
 
 # ----------------------------------------------------------------------------

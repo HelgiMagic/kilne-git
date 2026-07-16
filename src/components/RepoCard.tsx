@@ -1,5 +1,5 @@
 ﻿import { useStore } from '@/store'
-import { type Repo, type SyncState } from '@/types/repo'
+import { IDLE_SYNC, type Repo, type SyncState } from '@/types/repo'
 import { Spacing } from '@/constants/theme'
 import { StyleSheet, View } from 'react-native'
 
@@ -20,7 +20,7 @@ const SYNC_LABEL: Record<SyncState['kind'], string> = {
 }
 
 export function RepoCard({ repo }: Props) {
-  const sync = useStore((s) => s.sync[repo.id] ?? { kind: 'idle' })
+  const sync = useStore((s) => s.sync[repo.id] ?? IDLE_SYNC)
   const busy = sync.kind === 'pulling' || sync.kind === 'pushing' || sync.kind === 'cloning'
   const isError = sync.kind === 'error'
 

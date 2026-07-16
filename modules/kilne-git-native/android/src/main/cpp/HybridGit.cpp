@@ -352,6 +352,17 @@ HybridGit::HybridGit() {
     if (rc < 0) {
       throwGitError("Init", "git_libgit2_init() failed", rc);
     }
+    // Build-host CERT_LOCATION (see android/CMakeLists.txt) does not exist on
+    // device. Load Android's system CA store so HTTPS verify works.
+    static const char* const kCaDirs[] = {
+        "/apex/com.android.conscrypt/cacerts",  // Android 14+
+        "/system/etc/security/cacerts",
+    };
+    for (const char* dir : kCaDirs) {
+      if (git_libgit2_opts(GIT_OPT_SET_SSL_CERT_LOCATIONS, nullptr, dir) == 0) {
+        break;
+      }
+    }
   });
   _initialised.store(true, std::memory_order_release);
 }

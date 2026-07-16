@@ -46,7 +46,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "nitrogen": "cd modules/kilne-git-native && npx nitrogen",
-    "prebuild:clean": "rm -rf modules/kilne-git-native/android/.cxx modules/kilne-git-native/android/build && pnpm nitrogen && expo prebuild --clean --platform android"
+    "prebuild:clean": "rm -rf modules/kilne-git-native/android/.cxx modules/kilne-git-native/android/build && pnpm nitrogen && expo prebuild --clean --platform android",
+    "prebuild:clean:win": "cmd /c \"if exist modules\\kilne-git-native\\android\\.cxx rmdir /s /q modules\\kilne-git-native\\android\\.cxx & if exist modules\\kilne-git-native\\android\\build rmdir /s /q modules\\kilne-git-native\\android\\build\" && pnpm nitrogen && expo prebuild --clean --platform android"
   },
   "private": true
 }

@@ -39,6 +39,9 @@ export type SyncState =
   | { kind: 'done'; at: string; message: string }
   | { kind: 'error'; at: string; message: string }
 
+/** Stable idle snapshot for Zustand selectors — never allocate a fresh object inline. */
+export const IDLE_SYNC: SyncState = { kind: 'idle' }
+
 export const STORAGE_KEYS = {
   repos: 'kilne-git.repos',
 } as const

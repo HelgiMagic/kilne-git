@@ -16,6 +16,7 @@ import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Spacing } from '@/constants/theme'
 import { useStore } from '@/store'
+import { IDLE_SYNC } from '@/types/repo'
 import { type StatusResult } from 'kilne-git-native'
 import * as git from '@/services/git'
 import { commitAndPushRepo, pullRepo, pushRepo } from '@/hooks/use-sync'
@@ -26,7 +27,7 @@ export default function RepoDetailScreen() {
   const insets = useSafeAreaInsets()
 
   const repo = useStore((s) => s.repos.find((r) => r.id === params.id))
-  const sync = useStore((s) => (repo ? s.sync[repo.id] ?? { kind: 'idle' } : { kind: 'idle' }))
+  const sync = useStore((s) => (repo ? s.sync[repo.id] ?? IDLE_SYNC : IDLE_SYNC))
   const removeRepo = useStore((s) => s.removeRepo)
 
   const [status, setStatus] = useState<StatusResult | null>(null)
