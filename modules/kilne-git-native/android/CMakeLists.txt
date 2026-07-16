@@ -102,6 +102,9 @@ add_library(KilneGitNative SHARED
 
 target_include_directories(KilneGitNative PRIVATE
         src/main/cpp
+        # libgit2package only exports INSTALL_INTERFACE includes; for an
+        # in-tree FetchContent build we must point at the source headers.
+        "${libgit2_SOURCE_DIR}/include"
 )
 
 find_library(LOG_LIB log)
