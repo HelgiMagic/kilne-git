@@ -31,8 +31,7 @@ int credentialsCallback(git_credential** out,
     return GIT_PASSTHROUGH;
   }
   if (++data->attempts > 4) {
-    git_error_set_str(GIT_ERROR_NET,
-                      "Authentication failed after 4 attempts — credentials rejected by server.");
+    // Bail out — returning GIT_EAUTH stops libgit2's credential retry loop.
     return GIT_EAUTH;
   }
   // Prefer the username the app configured (e.g. x-access-token). Fall back to
