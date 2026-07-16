@@ -49,8 +49,17 @@ export async function pullRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'pulling' })
   try {
-    await git.pull(repo)
-    setDone(repo.id, 'Pull complete')
+    const result = await git.pull(repo)
+    if (result.fastForwarded) {
+      const n = Math.max(1, Math.round(result.commitsFetched))
+      setDone(repo.id, `Pulled ${n} commit${n === 1 ? '' : 's'} (fast-forward)`)
+    } else if (result.merged) {
+      setDone(repo.id, 'Merged upstream changes')
+    } else if (result.commitsFetched === 0) {
+      setDone(repo.id, 'Already up to date')
+    } else {
+      setDone(repo.id, 'Pull complete')
+    }
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)

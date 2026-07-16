@@ -2,7 +2,7 @@ import { Link } from 'expo-router'
 import { useRouter } from 'expo-router'
 import { useFocusEffect } from 'expo-router'
 import { useCallback } from 'react'
-import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, FlatList, Platform, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
@@ -43,11 +43,10 @@ export default function RepoListScreen() {
         data={repos}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <Pressable
+          <RepoCard
+            repo={item}
             onPress={() => router.push({ pathname: '/repo/[id]', params: { id: item.id } })}
-          >
-            <RepoCard repo={item} />
-          </Pressable>
+          />
         )}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.two }} />}
         ListEmptyComponent={() => (

@@ -9,6 +9,7 @@ import {
   type CloneResult,
   type Git,
   type GitCredentials,
+  type PullResult,
   type StatusResult,
 } from 'kilne-git-native'
 import { Directory } from 'expo-file-system'
@@ -158,14 +159,16 @@ export async function clone(repo: Repo): Promise<CloneResult> {
 /**
  * `git pull` on the configured upstream (falls back to origin/<head>).
  * Throws when the merge leaves unresolved conflicts.
+ * Returns the native result so callers can distinguish "already up to date".
  */
-export async function pull(repo: Repo): Promise<void> {
+export async function pull(repo: Repo): Promise<PullResult> {
   const result = await git().pull(nativePath(repo), await toCredentials(repo), options(repo))
   if (result.conflicted.length > 0) {
     throw new Error(
       `Merge conflicts in ${result.conflicted.length} file(s): ${result.conflicted.slice(0, 5).join(', ')}`,
     )
   }
+  return result
 }
 
 /** Stage everything + commit + push. Throws if the push fails. */

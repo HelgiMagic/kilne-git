@@ -185,6 +185,82 @@ std::string oidToHex(const git_oid* oid) {
   return std::string(buf);
 }
 
+/**
+ * Older pull FF moved HEAD before checkout; SAFE checkout then treated the
+ * still-old worktree as dirty local edits and skipped updating files. After
+ * that, ahead/behind is 0 but the index still matches an ancestor of HEAD.
+ * Completing a FORCE checkout of HEAD is safe in that case — the "local
+ * changes" are just the missing upstream tree.
+ *
+ * @return true when the worktree was repaired.
+ */
+bool healStaleWorktreeIfIndexMatchesAncestor(git_repository& repo, const git_oid& headOid) {
+  git_commit* rawHead = nullptr;
+  if (git_commit_lookup(&rawHead, &repo, &headOid) != 0 || rawHead == nullptr) {
+    return false;
+  }
+  CommitOwner headCommit = takeCommit(rawHead);
+
+  git_index* rawIndex = nullptr;
+  if (git_repository_index(&rawIndex, &repo) != 0 || rawIndex == nullptr) {
+    return false;
+  }
+  IndexOwner index = takeIndex(rawIndex);
+
+  git_oid indexTreeOid{};
+  if (git_index_write_tree(&indexTreeOid, index.get()) != 0) {
+    return false;
+  }
+
+  git_tree* rawHeadTree = nullptr;
+  if (git_commit_tree(&rawHeadTree, headCommit.get()) != 0 || rawHeadTree == nullptr) {
+    return false;
+  }
+  TreeOwner headTree = takeTree(rawHeadTree);
+  if (git_oid_equal(&indexTreeOid, git_tree_id(headTree.get())) == 1) {
+    return false;  // already in sync
+  }
+
+  bool matchesAncestor = false;
+  git_commit* walk = nullptr;
+  if (git_commit_parent(&walk, headCommit.get(), 0) != 0 || walk == nullptr) {
+    return false;
+  }
+  for (int depth = 0; depth < 64 && walk != nullptr; ++depth) {
+    CommitOwner current = takeCommit(walk);
+    walk = nullptr;
+
+    git_tree* rawTree = nullptr;
+    if (git_commit_tree(&rawTree, current.get()) == 0 && rawTree != nullptr) {
+      TreeOwner tree = takeTree(rawTree);
+      if (git_oid_equal(&indexTreeOid, git_tree_id(tree.get())) == 1) {
+        matchesAncestor = true;
+        break;
+      }
+    }
+
+    if (git_commit_parentcount(current.get()) < 1) {
+      break;
+    }
+    if (git_commit_parent(&walk, current.get(), 0) != 0) {
+      walk = nullptr;
+    }
+  }
+  if (walk != nullptr) {
+    git_commit_free(walk);
+  }
+  if (!matchesAncestor) {
+    return false;
+  }
+
+  git_checkout_options coOpts;
+  git_checkout_options_init(&coOpts, GIT_CHECKOUT_OPTIONS_VERSION);
+  coOpts.checkout_strategy = GIT_CHECKOUT_FORCE;
+  checkGit(git_checkout_tree(&repo, reinterpret_cast<git_object*>(headTree.get()), &coOpts),
+           "heal-stale-checkout", "");
+  return true;
+}
+
 StatusResult buildStatus(git_repository& repo) {
   git_status_options opts;
   git_status_options_init(&opts, GIT_STATUS_OPTIONS_VERSION);
@@ -470,25 +546,48 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
         result.conflicted = {};
 
         if (behind == 0) {
+          // Recover vaults stuck by the old FF order (HEAD moved, files did not).
+          if (healStaleWorktreeIfIndexMatchesAncestor(*repo, localOid)) {
+            result.fastForwarded = true;
+            result.commitsFetched = 1;
+          }
           return result;
         }
 
         if (ahead == 0) {
+          // Fast-forward: checkout the upstream tree WHILE HEAD still points at
+          // the old commit, then move the branch ref. Moving HEAD first makes
+          // GIT_CHECKOUT_SAFE treat the old worktree as dirty local edits and
+          // either no-op or refuse — leaving Behind:0 with files never updated.
           const git_oid* target = git_annotated_commit_id(upstreamCommit.get());
           auto branch = readHeadBranch(*repo);
           if (!branch.has_value()) {
             throw GitError("Pull", "Cannot fast-forward: detached HEAD.");
           }
+
+          git_commit* rawTargetCommit = nullptr;
+          checkGit(git_commit_lookup(&rawTargetCommit, repo.get(), target),
+                   "fast-forward-lookup", "");
+          CommitOwner targetCommit = takeCommit(rawTargetCommit);
+          git_tree* rawTargetTree = nullptr;
+          checkGit(git_commit_tree(&rawTargetTree, targetCommit.get()),
+                   "fast-forward-tree", "");
+          TreeOwner targetTree = takeTree(rawTargetTree);
+
+          git_checkout_options coOpts;
+          git_checkout_options_init(&coOpts, GIT_CHECKOUT_OPTIONS_VERSION);
+          coOpts.checkout_strategy = GIT_CHECKOUT_SAFE;
+          checkGit(git_checkout_tree(repo.get(),
+                                     reinterpret_cast<git_object*>(targetTree.get()),
+                                     &coOpts),
+                   "fast-forward-checkout", "");
+
           const std::string branchRef = "refs/heads/" + *branch;
           checkGit(git_reference_create(nullptr, repo.get(), branchRef.c_str(),
                                         target, /*force=*/1, "kilne-git pull"),
                    "fast-forward-ref", *branch);
           checkGit(git_repository_set_head(repo.get(), branchRef.c_str()),
                    "fast-forward-set-head", *branch);
-          git_checkout_options coOpts;
-          git_checkout_options_init(&coOpts, GIT_CHECKOUT_OPTIONS_VERSION);
-          coOpts.checkout_strategy = GIT_CHECKOUT_SAFE;
-          checkGit(git_checkout_head(repo.get(), &coOpts), "fast-forward-checkout-head", "");
           result.fastForwarded = true;
           return result;
         }

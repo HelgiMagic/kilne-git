@@ -1,14 +1,16 @@
 ﻿import { useStore } from '@/store'
 import { IDLE_SYNC, type Repo, type SyncState } from '@/types/repo'
 import { Spacing } from '@/constants/theme'
-import { StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native'
 
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
+import { commitAndPushRepo, pullRepo } from '@/hooks/use-sync'
 import { displayLocalPath } from '@/services/storage'
 
 interface Props {
   repo: Repo
+  onPress?: () => void
 }
 
 const SYNC_LABEL: Record<SyncState['kind'], string> = {
@@ -20,41 +22,94 @@ const SYNC_LABEL: Record<SyncState['kind'], string> = {
   error: 'Sync error',
 }
 
-export function RepoCard({ repo }: Props) {
+export function RepoCard({ repo, onPress }: Props) {
   const sync = useStore((s) => s.sync[repo.id] ?? IDLE_SYNC)
   const busy = sync.kind === 'pulling' || sync.kind === 'pushing' || sync.kind === 'cloning'
   const isError = sync.kind === 'error'
 
+  async function onPull() {
+    try {
+      await pullRepo(repo)
+    } catch {
+      // error already in store
+    }
+  }
+
+  async function onPush() {
+    try {
+      await commitAndPushRepo(repo, defaultCommitMessage())
+    } catch {
+      // error already in store
+    }
+  }
+
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
-      <View style={styles.header}>
-        <ThemedText type="smallBold" numberOfLines={1} style={styles.name}>
-          {repo.name}
+      <Pressable onPress={onPress} disabled={onPress == null} style={styles.info}>
+        <View style={styles.header}>
+          <ThemedText type="smallBold" numberOfLines={1} style={styles.name}>
+            {repo.name}
+          </ThemedText>
+          <StatusPill kind={sync.kind} isError={isError} busy={busy} />
+        </View>
+
+        <ThemedText type="small" numberOfLines={1} style={styles.url}>
+          {repo.url}
         </ThemedText>
-        <StatusPill kind={sync.kind} isError={isError} busy={busy} />
+        <ThemedText type="small" numberOfLines={1}>
+          {repo.branch} · {shortPath(repo.localPath)}
+        </ThemedText>
+
+        <View style={styles.meta}>
+          <ThemedText type="small">
+            {SYNC_LABEL[sync.kind]}
+            {sync.kind === 'done' || sync.kind === 'error' ? ` · ${formatRelative(sync.at)}` : ''}
+          </ThemedText>
+        </View>
+
+        {sync.kind === 'error' && (
+          <ThemedText type="small" style={styles.error} numberOfLines={2}>
+            {sync.message}
+          </ThemedText>
+        )}
+      </Pressable>
+
+      <View style={styles.buttonRow}>
+        <Action label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
+        <Action label="Push" onPress={onPush} disabled={busy} loading={sync.kind === 'pushing'} />
       </View>
-
-      <ThemedText type="small" numberOfLines={1} style={styles.url}>
-        {repo.url}
-      </ThemedText>
-      <ThemedText type="small" numberOfLines={1}>
-        {repo.branch} · {shortPath(repo.localPath)}
-      </ThemedText>
-
-      <View style={styles.meta}>
-        <ThemedText type="small">
-          {SYNC_LABEL[sync.kind]}
-          {sync.kind === 'done' || sync.kind === 'error' ? ` · ${formatRelative(sync.at)}` : ''}
-        </ThemedText>
-      </View>
-
-      {sync.kind === 'error' && (
-        <ThemedText type="small" style={styles.error} numberOfLines={2}>
-          {sync.message}
-        </ThemedText>
-      )}
     </ThemedView>
   )
+}
+
+function Action({
+  label,
+  onPress,
+  disabled,
+  loading,
+}: {
+  label: string
+  onPress: () => void
+  disabled: boolean
+  loading: boolean
+}) {
+  return (
+    <Pressable
+      style={[styles.actionBtn, disabled && styles.btnDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      {loading ? (
+        <ActivityIndicator color="#208AEF" />
+      ) : (
+        <ThemedText style={{ color: '#208AEF' }}>{label}</ThemedText>
+      )}
+    </Pressable>
+  )
+}
+
+function defaultCommitMessage(): string {
+  return `auto: sync from android @ ${new Date().toISOString()}`
 }
 
 function StatusPill({ kind, isError, busy }: { kind: SyncState['kind']; isError: boolean; busy: boolean }) {
@@ -94,6 +149,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: Spacing.one,
   },
+  info: {
+    gap: Spacing.one,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -114,4 +172,18 @@ const styles = StyleSheet.create({
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   error: { color: '#B00020', marginTop: Spacing.one },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+  },
+  actionBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#208AEF',
+    borderRadius: 10,
+    paddingVertical: Spacing.two,
+    alignItems: 'center',
+  },
+  btnDisabled: { opacity: 0.5 },
 })
