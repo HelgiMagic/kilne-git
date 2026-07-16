@@ -36,8 +36,14 @@ android {
 
   externalNativeBuild {
     cmake {
-      path "src/main/cpp/CMakeLists.txt"
+      // Nitro template: CMakeLists at android/ so ../nitrogen paths resolve.
+      path "CMakeLists.txt"
     }
+  }
+
+  buildFeatures {
+    // Required for find_package(fbjni / ReactAndroid / nitro-modules) in CMake.
+    prefab true
   }
 
   compileOptions {
@@ -59,8 +65,15 @@ android {
   }
 
   packagingOptions {
-    // libgit2 brings no JNI itself; only our own libKilneGitNative.so is packaged.
-    excludes = ['META-INF/androidx.versioning_versioning.versioning.version']
+    // Prefer the copies shipped by RN / Nitro / fbjni AARs — don't embed dupes.
+    excludes = [
+      'META-INF/androidx.versioning_versioning.versioning.version',
+      '**/libc++_shared.so',
+      '**/libNitroModules.so',
+      '**/libfbjni.so',
+      '**/libjsi.so',
+      '**/libreactnative.so',
+    ]
   }
 }
 
