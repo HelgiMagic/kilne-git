@@ -44,7 +44,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "nitrogen": "cd modules/kilne-git-native && npx nitrogen"
+    "nitrogen": "cd modules/kilne-git-native && npx nitrogen",
+    "prebuild:clean": "pnpm nitrogen && expo prebuild --clean --platform android"
   },
   "private": true
 }
