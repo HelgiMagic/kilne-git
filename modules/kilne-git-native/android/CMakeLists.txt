@@ -109,6 +109,8 @@ FetchContent_MakeAvailable(libgit2)
 add_library(KilneGitNative SHARED
         src/main/cpp/cpp-adapter.cpp
         src/main/cpp/HybridGit.cpp
+        src/main/cpp/GitRepoOps.cpp
+        src/main/cpp/GitMerge.cpp
         src/main/cpp/GitErrors.cpp
         src/main/cpp/GitRaii.cpp
 )

@@ -1,12 +1,14 @@
-﻿import { useStore } from '@/store'
-import { IDLE_SYNC, type Repo, type SyncState } from '@/types/repo'
-import { Spacing } from '@/constants/theme'
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native'
+﻿import { Pressable, StyleSheet, View } from 'react-native'
 
+import { ActionButton } from '@/components/ActionButton'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { commitAndPushRepo, pullRepo } from '@/hooks/use-sync'
+import { Accent, Danger, Spacing, Success } from '@/constants/theme'
+import { commitAndPushRepo, pullRepo } from '@/services/sync'
 import { displayLocalPath } from '@/services/storage'
+import { useStore } from '@/store'
+import { IDLE_SYNC, type Repo, type SyncState } from '@/types/repo'
+import { defaultCommitMessage } from '@/utils/commit'
 
 interface Props {
   repo: Repo
@@ -63,7 +65,11 @@ export function RepoCard({ repo, onPress }: Props) {
         <View style={styles.meta}>
           <ThemedText type="small">
             {SYNC_LABEL[sync.kind]}
-            {sync.kind === 'done' || sync.kind === 'error' ? ` · ${formatRelative(sync.at)}` : ''}
+            {sync.kind === 'done' || sync.kind === 'error'
+              ? ` · ${formatRelative(sync.at)}`
+              : repo.lastSyncedAt != null
+                ? ` · ${formatRelative(repo.lastSyncedAt)}`
+                : ''}
           </ThemedText>
         </View>
 
@@ -75,45 +81,20 @@ export function RepoCard({ repo, onPress }: Props) {
       </Pressable>
 
       <View style={styles.buttonRow}>
-        <Action label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
-        <Action label="Push" onPress={onPush} disabled={busy} loading={sync.kind === 'pushing'} />
+        <ActionButton label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
+        <ActionButton
+          label="Commit & push"
+          onPress={onPush}
+          disabled={busy}
+          loading={sync.kind === 'pushing'}
+        />
       </View>
     </ThemedView>
   )
 }
 
-function Action({
-  label,
-  onPress,
-  disabled,
-  loading,
-}: {
-  label: string
-  onPress: () => void
-  disabled: boolean
-  loading: boolean
-}) {
-  return (
-    <Pressable
-      style={[styles.actionBtn, disabled && styles.btnDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-    >
-      {loading ? (
-        <ActivityIndicator color="#208AEF" />
-      ) : (
-        <ThemedText style={{ color: '#208AEF' }}>{label}</ThemedText>
-      )}
-    </Pressable>
-  )
-}
-
-function defaultCommitMessage(): string {
-  return `auto: sync from android @ ${new Date().toISOString()}`
-}
-
 function StatusPill({ kind, isError, busy }: { kind: SyncState['kind']; isError: boolean; busy: boolean }) {
-  const color = isError ? '#B00020' : busy ? '#208AEF' : '#2E7D32'
+  const color = isError ? Danger : busy ? Accent : Success
   return (
     <View style={[styles.pill, { borderColor: color }]}>
       <View style={[styles.dot, { backgroundColor: color }]} />
@@ -127,16 +108,13 @@ function StatusPill({ kind, isError, busy }: { kind: SyncState['kind']; isError:
 function shortPath(path: string): string {
   const display = displayLocalPath(path)
   const segments = display.split('/')
-  if (segments.length <= 3) {
-    return display
-  }
+  if (segments.length <= 3) return display
   return '…/' + segments.slice(-2).join('/')
 }
 
 function formatRelative(iso: string): string {
   const then = new Date(iso).getTime()
-  const now = Date.now()
-  const delta = Math.max(0, now - then) / 1000
+  const delta = Math.max(0, Date.now() - then) / 1000
   if (delta < 60) return 'just now'
   if (delta < 3600) return `${Math.floor(delta / 60)}m ago`
   if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`
@@ -149,9 +127,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: Spacing.one,
   },
-  info: {
-    gap: Spacing.one,
-  },
+  info: { gap: Spacing.one },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,19 +147,10 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.half,
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  error: { color: '#B00020', marginTop: Spacing.one },
+  error: { color: Danger, marginTop: Spacing.one },
   buttonRow: {
     flexDirection: 'row',
     gap: Spacing.two,
     marginTop: Spacing.two,
   },
-  actionBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#208AEF',
-    borderRadius: 10,
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
-  },
-  btnDisabled: { opacity: 0.5 },
 })

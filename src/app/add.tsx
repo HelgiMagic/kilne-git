@@ -15,10 +15,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Field } from '@/components/Field'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Spacing } from '@/constants/theme'
+import { Accent, Spacing } from '@/constants/theme'
 import { useStore } from '@/store'
 import { type Repo } from '@/types/repo'
-import { cloneRepo } from '@/hooks/use-sync'
+import { cloneRepo } from '@/services/sync'
 import { defaultVaultLocalPath, resolveLocalPath } from '@/services/storage'
 import {
   ensureSharedStorageWriteAccess,
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   actions: { paddingTop: Spacing.two },
   primaryBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: Accent,
     paddingVertical: Spacing.three,
     borderRadius: 10,
     alignItems: 'center',

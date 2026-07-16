@@ -1,12 +1,3 @@
-/**
- * Global app state. Powered by zustand because it's tiny, framework-agnostic
- * and works great with React 19's `useSyncExternalStore`.
- *
- * The store keeps the in-memory list of repos (mirrored from disk) plus a
- * per-repo transient sync-state map that the UI reads to render spinners and
- * toast notifications.
- */
-
 import { create } from 'zustand'
 
 import { loadRepos, saveRepos } from '@/services/storage'
@@ -14,14 +5,9 @@ import { deleteToken, saveToken } from '@/services/secure'
 import { type NewRepo, type Repo, type SyncState } from '@/types/repo'
 
 interface AppState {
-  /** Persisted repos, hydrated from disk on startup. */
   repos: Repo[]
-  /** Per-repo transient state for the most recent action. */
   sync: Record<string, SyncState>
-  /** True until the initial hydration from disk has finished. */
   hydrated: boolean
-
-  // actions
   hydrate: () => Promise<void>
   upsertRepo: (input: NewRepo) => Promise<Repo>
   removeRepo: (id: string) => Promise<void>
@@ -29,30 +15,13 @@ interface AppState {
   setSync: (id: string, state: SyncState) => void
 }
 
-function fillRandomBytes(bytes: Uint8Array): void {
-  // Hermes often has no global `crypto`; Math.random is fine for local repo ids.
-  const webCrypto = globalThis.crypto
-  if (webCrypto?.getRandomValues != null) {
-    webCrypto.getRandomValues(bytes)
-    return
-  }
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = Math.floor(Math.random() * 256)
-  }
-}
-
 function makeId(): string {
-  // Lightweight UUID v4 for local repo ids (not a security boundary).
-  const bytes = new Uint8Array(16)
-  fillRandomBytes(bytes)
-  bytes[6] = (bytes[6] & 0x0f) | 0x40
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
-  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`
+  // Local repo ids only — not a security boundary.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`
 }
 
 function withId(input: NewRepo): Repo {
-  const repo: Repo = {
+  return {
     id: input.id ?? makeId(),
     name: input.name,
     url: input.url,
@@ -64,7 +33,6 @@ function withId(input: NewRepo): Repo {
     authorEmail: input.authorEmail,
     lastSyncedAt: null,
   }
-  return repo
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -73,23 +41,19 @@ export const useStore = create<AppState>((set, get) => ({
   hydrated: false,
 
   hydrate: async () => {
-    if (get().hydrated) {
-      return
-    }
+    if (get().hydrated) return
     const repos = await loadRepos()
     set({ repos, hydrated: true })
   },
 
   upsertRepo: async (input) => {
-    const existing = input.id != null
-      ? get().repos.find((r) => r.id === input.id)
-      : undefined
-    const repo: Repo = existing != null
-      ? { ...existing, ...input, id: existing.id }
-      : withId(input)
-    const next = existing != null
-      ? get().repos.map((r) => (r.id === repo.id ? repo : r))
-      : [...get().repos, repo]
+    const existing = input.id != null ? get().repos.find((r) => r.id === input.id) : undefined
+    const repo: Repo =
+      existing != null ? { ...existing, ...input, id: existing.id } : withId(input)
+    const next =
+      existing != null
+        ? get().repos.map((r) => (r.id === repo.id ? repo : r))
+        : [...get().repos, repo]
     set({ repos: next })
     await saveRepos(next)
     return repo
@@ -112,8 +76,3 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ sync: { ...s.sync, [id]: state } }))
   },
 }))
-
-/** Selector: returns the live sync state for a repo, or idle. */
-export function selectSync(sync: Record<string, SyncState>, id: string): SyncState {
-  return sync[id] ?? { kind: 'idle' }
-}

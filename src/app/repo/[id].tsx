@@ -11,16 +11,18 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
+import { ActionButton } from '@/components/ActionButton'
 import { Field } from '@/components/Field'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Spacing } from '@/constants/theme'
+import { Accent, Danger, Spacing, Success } from '@/constants/theme'
+import * as git from '@/services/git'
+import { commitAndPushRepo, pullRepo, pushRepo } from '@/services/sync'
+import { displayLocalPath } from '@/services/storage'
 import { useStore } from '@/store'
 import { IDLE_SYNC } from '@/types/repo'
 import { type StatusResult } from 'kilne-git-native'
-import * as git from '@/services/git'
-import { commitAndPushRepo, pullRepo, pushRepo } from '@/hooks/use-sync'
-import { displayLocalPath } from '@/services/storage'
+import { defaultCommitMessage } from '@/utils/commit'
 
 export default function RepoDetailScreen() {
   const params = useGlobalSearchParams<{ id: string }>()
@@ -28,7 +30,7 @@ export default function RepoDetailScreen() {
   const insets = useSafeAreaInsets()
 
   const repo = useStore((s) => s.repos.find((r) => r.id === params.id))
-  const sync = useStore((s) => (repo ? s.sync[repo.id] ?? IDLE_SYNC : IDLE_SYNC))
+  const sync = useStore((s) => (repo ? (s.sync[repo.id] ?? IDLE_SYNC) : IDLE_SYNC))
   const removeRepo = useStore((s) => s.removeRepo)
 
   const [status, setStatus] = useState<StatusResult | null>(null)
@@ -45,7 +47,7 @@ export default function RepoDetailScreen() {
       <ThemedView style={styles.center}>
         <ThemedText>Repository not found.</ThemedText>
         <Pressable onPress={() => router.replace('/')} style={styles.link}>
-          <ThemedText style={{ color: '#208AEF' }}>Back to list</ThemedText>
+          <ThemedText style={{ color: Accent }}>Back to list</ThemedText>
         </Pressable>
       </ThemedView>
     )
@@ -57,10 +59,8 @@ export default function RepoDetailScreen() {
     if (!repo) return
     setStatusLoading(true)
     try {
-      const s = await git.status(repo)
-      setStatus(s)
-    } catch (e) {
-      // Status may fail when the repo doesn't exist yet (clone pending).
+      setStatus(await git.status(repo))
+    } catch {
       setStatus(null)
     } finally {
       setStatusLoading(false)
@@ -120,7 +120,10 @@ export default function RepoDetailScreen() {
 
   return (
     <ScrollView
-      contentContainerStyle={{ paddingVertical: Spacing.three, paddingBottom: insets.bottom + Spacing.five }}
+      contentContainerStyle={{
+        paddingVertical: Spacing.three,
+        paddingBottom: insets.bottom + Spacing.five,
+      }}
       showsVerticalScrollIndicator={false}
     >
       <ThemedText type="title">{repo.name}</ThemedText>
@@ -131,8 +134,8 @@ export default function RepoDetailScreen() {
       <SyncBanner kind={sync.kind} message={'message' in sync ? sync.message : ''} />
 
       <View style={styles.buttonRow}>
-        <Action label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
-        <Action label="Push" onPress={onPush} disabled={busy} loading={sync.kind === 'pushing'} />
+        <ActionButton label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
+        <ActionButton label="Push" onPress={onPush} disabled={busy} loading={sync.kind === 'pushing'} />
       </View>
 
       <Field label="Commit message" hint="Optional. Auto-generated when left blank.">
@@ -147,7 +150,11 @@ export default function RepoDetailScreen() {
         />
       </Field>
 
-      <Pressable style={[styles.primaryBtn, busy && styles.btnDisabled]} onPress={onCommitAndPush} disabled={busy}>
+      <Pressable
+        style={[styles.primaryBtn, busy && styles.btnDisabled]}
+        onPress={onCommitAndPush}
+        disabled={busy}
+      >
         <ThemedText style={styles.primaryBtnText}>Commit all & push</ThemedText>
       </Pressable>
 
@@ -165,12 +172,12 @@ export default function RepoDetailScreen() {
       )}
 
       <Pressable onPress={refreshStatus} style={styles.link}>
-        <ThemedText style={{ color: '#208AEF' }}>Refresh status</ThemedText>
+        <ThemedText style={{ color: Accent }}>Refresh status</ThemedText>
       </Pressable>
 
       <View style={{ height: Spacing.four }} />
       <Pressable onPress={onRemove} style={styles.dangerBtn}>
-        <ThemedText style={{ color: '#B00020' }}>Remove repository</ThemedText>
+        <ThemedText style={{ color: Danger }}>Remove repository</ThemedText>
       </Pressable>
     </ScrollView>
   )
@@ -218,7 +225,7 @@ function StatusView({ status }: { status: StatusResult }) {
         <>
           <Section title="Conflicted" />
           {status.conflicted.map((p) => (
-            <ThemedText key={'c-' + p} type="small" style={{ color: '#B00020' }} numberOfLines={1}>
+            <ThemedText key={'c-' + p} type="small" style={{ color: Danger }} numberOfLines={1}>
               {p}
             </ThemedText>
           ))}
@@ -240,7 +247,11 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 function Section({ title }: { title: string }) {
-  return <ThemedText type="smallBold" style={{ marginTop: Spacing.two, marginBottom: Spacing.one }}>{title}</ThemedText>
+  return (
+    <ThemedText type="smallBold" style={{ marginTop: Spacing.two, marginBottom: Spacing.one }}>
+      {title}
+    </ThemedText>
+  )
 }
 
 function SyncBanner({ kind, message }: { kind: string; message: string }) {
@@ -250,37 +261,17 @@ function SyncBanner({ kind, message }: { kind: string; message: string }) {
   const isError = kind === 'error'
   return (
     <View style={[styles.banner, isError ? styles.bannerError : styles.bannerOk]}>
-      <ThemedText style={{ color: isError ? '#B00020' : '#2E7D32' }}>{message}</ThemedText>
+      <ThemedText style={{ color: isError ? Danger : Success }}>{message}</ThemedText>
     </View>
   )
-}
-
-function Action({ label, onPress, disabled, loading }: { label: string; onPress: () => void; disabled: boolean; loading: boolean }) {
-  return (
-    <Pressable style={[styles.actionBtn, disabled && styles.btnDisabled]} onPress={onPress} disabled={disabled}>
-      {loading ? <ActivityIndicator color="#208AEF" /> : <ThemedText style={{ color: '#208AEF' }}>{label}</ThemedText>}
-    </Pressable>
-  )
-}
-
-function defaultCommitMessage(): string {
-  return `auto: sync from android @ ${new Date().toISOString()}`
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.three },
   link: { marginTop: Spacing.two, alignSelf: 'flex-start', paddingVertical: Spacing.one },
   buttonRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.three },
-  actionBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#208AEF',
-    borderRadius: 10,
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
-  },
   primaryBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: Accent,
     borderRadius: 10,
     paddingVertical: Spacing.three,
     alignItems: 'center',

@@ -42,13 +42,11 @@ namespace margelo::nitro::kilne::git {
   public:
     std::optional<std::string> authorName     SWIFT_PRIVATE;
     std::optional<std::string> authorEmail     SWIFT_PRIVATE;
-    std::optional<std::string> committerName     SWIFT_PRIVATE;
-    std::optional<std::string> committerEmail     SWIFT_PRIVATE;
     std::optional<bool> insecure     SWIFT_PRIVATE;
 
   public:
     CommitAndInsecureOptions() = default;
-    explicit CommitAndInsecureOptions(std::optional<std::string> authorName, std::optional<std::string> authorEmail, std::optional<std::string> committerName, std::optional<std::string> committerEmail, std::optional<bool> insecure): authorName(authorName), authorEmail(authorEmail), committerName(committerName), committerEmail(committerEmail), insecure(insecure) {}
+    explicit CommitAndInsecureOptions(std::optional<std::string> authorName, std::optional<std::string> authorEmail, std::optional<bool> insecure): authorName(authorName), authorEmail(authorEmail), insecure(insecure) {}
 
   public:
     friend bool operator==(const CommitAndInsecureOptions& lhs, const CommitAndInsecureOptions& rhs) = default;
@@ -66,8 +64,6 @@ namespace margelo::nitro {
       return margelo::nitro::kilne::git::CommitAndInsecureOptions(
         JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "authorName"))),
         JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "authorEmail"))),
-        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "committerName"))),
-        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "committerEmail"))),
         JSIConverter<std::optional<bool>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "insecure")))
       );
     }
@@ -75,8 +71,6 @@ namespace margelo::nitro {
       jsi::Object obj(runtime);
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "authorName"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.authorName));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "authorEmail"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.authorEmail));
-      obj.setProperty(runtime, PropNameIDCache::get(runtime, "committerName"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.committerName));
-      obj.setProperty(runtime, PropNameIDCache::get(runtime, "committerEmail"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.committerEmail));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "insecure"), JSIConverter<std::optional<bool>>::toJSI(runtime, arg.insecure));
       return obj;
     }
@@ -90,8 +84,6 @@ namespace margelo::nitro {
       }
       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "authorName")))) return false;
       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "authorEmail")))) return false;
-      if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "committerName")))) return false;
-      if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "committerEmail")))) return false;
       if (!JSIConverter<std::optional<bool>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "insecure")))) return false;
       return true;
     }

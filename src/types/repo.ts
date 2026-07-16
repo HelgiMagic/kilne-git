@@ -1,39 +1,24 @@
 /**
- * JS-side model of a tracked repository. Persisted in AsyncStorage under
- * {@link STORAGE_KEYS.repos} and looked up by {@link Repo['id']}.
- *
- * The personal access token is NOT stored here — it lives in expo-secure-store
- * keyed by `kilne-git.token.<id>` (see {@link secureStorage}).
+ * Tracked repository config. Tokens live in SecureStore (see `services/secure.ts`),
+ * not in this model. Repo list is persisted as JSON via `services/storage.ts`.
  */
+
 export interface Repo {
-  /** Stable random ID (UUID v4). */
   id: string
-  /** Display name shown in the UI. Defaults to the repo name from the URL. */
   name: string
-  /** HTTPS clone URL, e.g. `https://github.com/user/vault.git`. */
   url: string
-  /**
-   * Default branch, e.g. `main` or `master`.
-   * Empty on add → clone checks out the remote HEAD, then the real name is stored.
-   */
+  /** Empty on add → clone uses remote HEAD, then the real name is stored. */
   branch: string
-  /** Absolute filesystem path to the working tree on the device. */
   localPath: string
-  /** GitHub-style username used for basic auth (anything for tokens). */
   username: string
-  /** Whether to disable TLS certificate verification (self-hosted servers). */
   insecure: boolean
-  /** Author identity for commits, when not derived from token / git config. */
   authorName: string
   authorEmail: string
-  /** ISO timestamp of the last successful sync. */
   lastSyncedAt: string | null
 }
 
-/** Subset of {@link Repo} that the user can edit when adding a new repository. */
 export type NewRepo = Omit<Repo, 'id' | 'lastSyncedAt'> & { id?: string }
 
-/** Live progress / result of the most recent sync action for a given repo. */
 export type SyncState =
   | { kind: 'idle' }
   | { kind: 'pulling' }
@@ -42,16 +27,11 @@ export type SyncState =
   | { kind: 'done'; at: string; message: string }
   | { kind: 'error'; at: string; message: string }
 
-/** Stable idle snapshot for Zustand selectors — never allocate a fresh object inline. */
+/** Stable idle snapshot for Zustand selectors. */
 export const IDLE_SYNC: SyncState = { kind: 'idle' }
 
-export const STORAGE_KEYS = {
-  repos: 'kilne-git.repos',
-} as const
+const SECURE_KEY_PREFIX = 'kilne-git.token.'
 
-export const SECURE_KEY_PREFIX = 'kilne-git.token.'
-
-/** Build the secure-storage key for a repo's token. */
 export function tokenKey(repoId: string): string {
   return SECURE_KEY_PREFIX + repoId
 }

@@ -9,7 +9,7 @@
 import { Platform } from 'react-native'
 import { Directory, File, Paths } from 'expo-file-system'
 
-import { type Repo, STORAGE_KEYS } from '@/types/repo'
+import { type Repo } from '@/types/repo'
 
 const FILE_NAME = 'kilne-git.repos.json'
 
@@ -54,15 +54,7 @@ export async function saveRepos(repos: Repo[]): Promise<void> {
   await file.write(json, { encoding: 'utf8' })
 }
 
-/** Returns the document directory as a `file://` URI string. */
-export function documentDirectoryUri(): string {
-  return Paths.document.uri
-}
-
-/**
- * Returns the document directory as an absolute filesystem path (no `file://` scheme).
- * Use this for libgit2 and anywhere a native path is required.
- */
+/** Document directory as an absolute filesystem path (no `file://`). */
 export function documentDirectoryPath(): string {
   return toFilesystemPath(Paths.document.uri)
 }
@@ -227,5 +219,3 @@ function ensureDirectoryViaAncestors(absPath: string): void {
 
   throw new Error(SHARED_STORAGE_ACCESS_ERROR)
 }
-
-export { STORAGE_KEYS }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <functional>
 #include <memory>
+#include <string>
 
 #include <git2.h>
 
@@ -24,8 +24,6 @@ struct GitPtrDeleters {
   static void tree(git_tree* p) noexcept                    { if (p) git_tree_free(p); }
   static void signature(git_signature* p) noexcept          { if (p) git_signature_free(p); }
   static void statusList(git_status_list* p) noexcept       { if (p) git_status_list_free(p); }
-  static void strarray(git_strarray* p) noexcept            { if (p) git_strarray_dispose(p); }
-  static void credential(git_credential* p) noexcept        { if (p) git_credential_free(p); }
 };
 
 using RepositoryOwner       = std::unique_ptr<git_repository,        decltype(&GitPtrDeleters::repository)>;
@@ -37,7 +35,6 @@ using CommitOwner           = std::unique_ptr<git_commit,            decltype(&G
 using TreeOwner             = std::unique_ptr<git_tree,              decltype(&GitPtrDeleters::tree)>;
 using SignatureOwner        = std::unique_ptr<git_signature,         decltype(&GitPtrDeleters::signature)>;
 using StatusListOwner       = std::unique_ptr<git_status_list,       decltype(&GitPtrDeleters::statusList)>;
-using CredentialOwner       = std::unique_ptr<git_credential,        decltype(&GitPtrDeleters::credential)>;
 
 /** Wraps a raw `git_repository*` into a RAII owner. */
 inline RepositoryOwner takeRepo(git_repository* p) { return RepositoryOwner(p, GitPtrDeleters::repository); }

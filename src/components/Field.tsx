@@ -9,10 +9,7 @@ interface Props {
   children: React.ReactNode
 }
 
-/**
- * A label + value row used in the repo detail screen.
- * Wraps children in a styled container so any input (text, switch, picker) lines up.
- */
+/** Label + optional hint wrapping a form control. */
 export function Field({ label, hint, children }: Props) {
   return (
     <View style={styles.container}>

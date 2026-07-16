@@ -33,8 +33,8 @@ namespace margelo::nitro::kilne::git { struct PushResult; }
 namespace margelo::nitro::kilne::git { struct StatusResult; }
 
 #include <string>
-#include <NitroModules/Promise.hpp>
 #include "CloneResult.hpp"
+#include <NitroModules/Promise.hpp>
 #include "GitCredentials.hpp"
 #include <optional>
 #include "CloneOptions.hpp"
@@ -76,7 +76,6 @@ namespace margelo::nitro::kilne::git {
 
     public:
       // Methods
-      virtual std::shared_ptr<Promise<std::string>> init(const std::string& localPath) = 0;
       virtual std::shared_ptr<Promise<CloneResult>> clone(const std::string& url, const std::string& localPath, const std::optional<GitCredentials>& credentials, const std::optional<CloneOptions>& options) = 0;
       virtual std::shared_ptr<Promise<PullResult>> pull(const std::string& localPath, const std::optional<GitCredentials>& credentials, const std::optional<InsecureOptions>& options) = 0;
       virtual std::shared_ptr<Promise<CommitAndPushResult>> commitAllAndPush(const std::string& localPath, const std::string& message, const std::optional<GitCredentials>& credentials, const std::optional<CommitAndInsecureOptions>& options) = 0;

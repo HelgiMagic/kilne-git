@@ -15,7 +15,6 @@ namespace margelo::nitro::kilne::git {
     // load custom methods/properties
     registerHybrids(this, [](Prototype& prototype) {
       prototype.registerHybridGetter("version", &HybridGitSpec::getVersion);
-      prototype.registerHybridMethod("init", &HybridGitSpec::init);
       prototype.registerHybridMethod("clone", &HybridGitSpec::clone);
       prototype.registerHybridMethod("pull", &HybridGitSpec::pull);
       prototype.registerHybridMethod("commitAllAndPush", &HybridGitSpec::commitAllAndPush);

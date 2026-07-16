@@ -1,9 +1,6 @@
 /**
- * Sync orchestration: pulls, commits-and-pushes, and clones repos via the git
- * service, updating the zustand store with progress + outcome so UI can react.
- *
- * Each action refuses to start if another sync is already running for the same
- * repo (throws so callers can show feedback).
+ * Sync orchestration: clone / pull / push / commit-and-push.
+ * Updates zustand sync state so the UI can show progress and outcomes.
  */
 
 import { useStore } from '@/store'
@@ -44,7 +41,6 @@ async function persistLastSynced(repoId: string) {
   await saveRepos(updated)
 }
 
-/** Pull latest changes from upstream for `repo`. Throws when busy. */
 export async function pullRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'pulling' })
@@ -67,7 +63,6 @@ export async function pullRepo(repo: Repo): Promise<void> {
   }
 }
 
-/** Stage everything + commit + push for `repo`. Throws when busy. */
 export async function commitAndPushRepo(repo: Repo, message: string): Promise<void> {
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
@@ -81,7 +76,6 @@ export async function commitAndPushRepo(repo: Repo, message: string): Promise<vo
   }
 }
 
-/** Push without committing (for commits already made elsewhere). Throws when busy. */
 export async function pushRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
@@ -95,13 +89,11 @@ export async function pushRepo(repo: Repo): Promise<void> {
   }
 }
 
-/** First-time clone of `repo`. Used from the "Add repo" flow. */
 export async function cloneRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'cloning' })
   try {
     const result = await git.clone(repo)
-    // Persist the branch that was actually checked out (remote HEAD when none set).
     if (result.branch.length > 0 && result.branch !== 'HEAD' && result.branch !== repo.branch) {
       await useStore.getState().upsertRepo({ ...repo, branch: result.branch })
     }

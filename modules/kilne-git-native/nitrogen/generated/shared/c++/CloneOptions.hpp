@@ -41,12 +41,11 @@ namespace margelo::nitro::kilne::git {
   struct CloneOptions final {
   public:
     std::optional<std::string> branch     SWIFT_PRIVATE;
-    std::optional<double> depth     SWIFT_PRIVATE;
     std::optional<bool> insecure     SWIFT_PRIVATE;
 
   public:
     CloneOptions() = default;
-    explicit CloneOptions(std::optional<std::string> branch, std::optional<double> depth, std::optional<bool> insecure): branch(branch), depth(depth), insecure(insecure) {}
+    explicit CloneOptions(std::optional<std::string> branch, std::optional<bool> insecure): branch(branch), insecure(insecure) {}
 
   public:
     friend bool operator==(const CloneOptions& lhs, const CloneOptions& rhs) = default;
@@ -63,14 +62,12 @@ namespace margelo::nitro {
       jsi::Object obj = arg.asObject(runtime);
       return margelo::nitro::kilne::git::CloneOptions(
         JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "branch"))),
-        JSIConverter<std::optional<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "depth"))),
         JSIConverter<std::optional<bool>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "insecure")))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::kilne::git::CloneOptions& arg) {
       jsi::Object obj(runtime);
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "branch"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.branch));
-      obj.setProperty(runtime, PropNameIDCache::get(runtime, "depth"), JSIConverter<std::optional<double>>::toJSI(runtime, arg.depth));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "insecure"), JSIConverter<std::optional<bool>>::toJSI(runtime, arg.insecure));
       return obj;
     }
@@ -83,7 +80,6 @@ namespace margelo::nitro {
         return false;
       }
       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "branch")))) return false;
-      if (!JSIConverter<std::optional<double>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "depth")))) return false;
       if (!JSIConverter<std::optional<bool>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "insecure")))) return false;
       return true;
     }

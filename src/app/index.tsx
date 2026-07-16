@@ -1,6 +1,4 @@
-import { Link } from 'expo-router'
-import { useRouter } from 'expo-router'
-import { useFocusEffect } from 'expo-router'
+import { Link, useFocusEffect, useRouter } from 'expo-router'
 import { useCallback } from 'react'
 import { ActivityIndicator, FlatList, Platform, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -8,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { RepoCard } from '@/components/RepoCard'
-import { Spacing } from '@/constants/theme'
+import { Accent, Spacing } from '@/constants/theme'
 import { useStore } from '@/store'
 
 export default function RepoListScreen() {
@@ -75,7 +73,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: Spacing.three,
-    backgroundColor: '#208AEF',
+    backgroundColor: Accent,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     borderRadius: 999,

@@ -11,8 +11,8 @@ The whole point: native C++ git via libgit2 (not isomorphic-git) so it's as fast
 │  TypeScript UI (Expo Router)                     │
 │   src/app/…           screens                    │
 │   src/components/…    RepoCard, Field, …         │
-│   src/services/…      git.ts, storage.ts, secure │
-│   src/store.ts        zustand global state       │
+│   src/services/…      git, sync, storage, secure │
+│   src/store.ts        zustand (repos + sync)     │
 └──────────────────┬──────────────────────────────┘
                    │ JS calls (via JSI)
 ┌──────────────────▼──────────────────────────────┐
@@ -34,6 +34,7 @@ Files worth reading first:
 - `modules/kilne-git-native/android/src/main/cpp/CMakeLists.txt` — how deps are wired.
 - `src/app/repo/[id].tsx` — the Pull / Commit & Push / Status screen.
 - `src/services/git.ts` — high-level wrapper used by the UI.
+- `src/services/sync.ts` — sync orchestration + zustand progress state.
 
 ## Build
 
@@ -114,7 +115,7 @@ This is an MVP — intentional scope cuts:
 
 ```bash
 pnpm exec tsc --noEmit   # type-check the TS / TSX
-pnpm lint                # ESLint
+pnpm lint                # ESLint (if configured)
 ```
 
 C++ side: there's no static-analysis CI yet. The libgit2 calls follow the official docs at <https://libgit2.org/libgit2/HEAD/>.
