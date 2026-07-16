@@ -1,10 +1,16 @@
 #include "GitMerge.hpp"
 
 #include "GitErrors.hpp"
+#include "GitRepoOps.hpp"
 
+#include <chrono>
 #include <cstdio>
+#include <cstring>
+#include <dirent.h>
 #include <optional>
 #include <string>
+#include <sys/stat.h>
+#include <thread>
 #include <vector>
 
 #include <git2.h>
@@ -36,18 +42,169 @@ int collectMergeHead(const git_oid* oid, void* payload) {
   return 0;
 }
 
+/** Emulate `git add -A`: update tracked paths (incl. deletes) then add untracked. */
+void stageAddAll(git_index& index) {
+  git_strarray paths = {nullptr, 0};
+  checkGit(git_index_update_all(&index, &paths, nullptr, nullptr), "update-all", "");
+  checkGit(git_index_add_all(&index, &paths, 0, nullptr, nullptr), "add-all", "");
+}
+
+/**
+ * Stage whatever status still reports as dirty. Covers cases where add_all's
+ * workdir diff missed a path that status (or a later readdir) can see.
+ */
+void stageFromStatus(git_repository& repo, git_index& index) {
+  const StatusResult st = buildStatus(repo);
+  for (const auto& path : st.untracked) {
+    if (path.empty() || path.back() == '/') {
+      continue;  // directory placeholder — recurse via add_all / walk
+    }
+    checkGit(git_index_add_bypath(&index, path.c_str()), "add-untracked", path);
+  }
+  for (const auto& entry : st.working) {
+    if (entry.worktree == FileState::DELETED) {
+      checkGit(git_index_remove_bypath(&index, entry.path.c_str()), "remove-deleted", entry.path);
+    } else if (entry.worktree == FileState::MODIFIED ||
+               entry.worktree == FileState::TYPECHANGE ||
+               entry.worktree == FileState::RENAMED ||
+               entry.worktree == FileState::NEW) {
+      checkGit(git_index_add_bypath(&index, entry.path.c_str()), "add-working", entry.path);
+    }
+  }
+}
+
+bool isDotGitDir(const char* name) noexcept {
+  return name != nullptr && std::strcmp(name, ".git") == 0;
+}
+
+/**
+ * Walk the workdir with POSIX readdir and add any non-ignored regular file that
+ * is not already in the index. Bypasses libgit2 untracked-cache / FUSE mtime
+ * shortcuts that miss newly created notes and attachments on Android.
+ */
+void stageViaWorkdirWalk(git_repository& repo, git_index& index, const std::string& absDir,
+                         const std::string& relPrefix) {
+  DIR* dir = ::opendir(absDir.c_str());
+  if (dir == nullptr) {
+    return;
+  }
+
+  while (const dirent* ent = ::readdir(dir)) {
+    const char* name = ent->d_name;
+    if (name == nullptr || std::strcmp(name, ".") == 0 || std::strcmp(name, "..") == 0) {
+      continue;
+    }
+    if (relPrefix.empty() && isDotGitDir(name)) {
+      continue;
+    }
+
+    const std::string absChild = absDir + "/" + name;
+    const std::string relChild = relPrefix.empty() ? std::string(name) : relPrefix + "/" + name;
+
+    struct stat st {};
+    if (::lstat(absChild.c_str(), &st) != 0) {
+      continue;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+      stageViaWorkdirWalk(repo, index, absChild, relChild);
+      continue;
+    }
+    if (!S_ISREG(st.st_mode)) {
+      continue;
+    }
+
+    int ignored = 0;
+    if (git_ignore_path_is_ignored(&ignored, &repo, relChild.c_str()) == 0 && ignored == 1) {
+      continue;
+    }
+
+    // Already tracked at stage 0 — skip; modifications are handled by update_all.
+    if (git_index_get_bypath(&index, relChild.c_str(), 0) != nullptr) {
+      continue;
+    }
+
+    checkGit(git_index_add_bypath(&index, relChild.c_str()), "add-walk", relChild);
+  }
+
+  ::closedir(dir);
+}
+
+void stageWorkdirFallback(git_repository& repo, git_index& index) {
+  const char* workdir = git_repository_workdir(&repo);
+  if (workdir == nullptr) {
+    return;
+  }
+  std::string root = workdir;
+  while (!root.empty() && (root.back() == '/' || root.back() == '\\')) {
+    root.pop_back();
+  }
+  if (root.empty()) {
+    return;
+  }
+  stageViaWorkdirWalk(repo, index, root, "");
+}
+
+std::vector<std::string> remainingUntracked(git_repository& repo) {
+  const StatusResult st = buildStatus(repo);
+  std::vector<std::string> out;
+  out.reserve(st.untracked.size());
+  for (const auto& path : st.untracked) {
+    if (!path.empty() && path.back() != '/') {
+      out.push_back(path);
+    }
+  }
+  return out;
+}
+
+void stageEverything(git_repository& repo, git_index& index, bool requireCleanUntracked) {
+  // Reload index from disk in case another process touched it.
+  checkGit(git_index_read(&index, 1), "index-read", "");
+
+  stageAddAll(index);
+  stageFromStatus(repo, index);
+  stageWorkdirFallback(repo, index);
+  checkGit(git_index_write(&index), "index-write", "");
+
+  auto leftover = remainingUntracked(repo);
+  if (leftover.empty()) {
+    return;
+  }
+
+  // Obsidian / FUSE can flush new files slightly after the note edit that
+  // references them. Brief pause + second pass catches attachments & new notes.
+  std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  stageAddAll(index);
+  stageFromStatus(repo, index);
+  stageWorkdirFallback(repo, index);
+  checkGit(git_index_write(&index), "index-write-retry", "");
+
+  if (!requireCleanUntracked) {
+    return;
+  }
+
+  leftover = remainingUntracked(repo);
+  if (!leftover.empty()) {
+    std::string detail = "Could not stage " + std::to_string(leftover.size()) +
+                         " new file(s). They are visible to Obsidian but not yet "
+                         "readable for git (common on Android shared storage). "
+                         "Wait a moment and Commit & push again. First path: " +
+                         leftover.front();
+    throw GitError("Stage", detail);
+  }
+}
+
 StageAndCommitResult stageAllAndCommitImpl(
     git_repository& repo,
     const char* message,
     const std::optional<CommitAndInsecureOptions>* options,
-    const char* commitOperation) {
+    const char* commitOperation,
+    bool requireCleanUntracked) {
   git_index* rawIndex = nullptr;
   checkGit(git_repository_index(&rawIndex, &repo), "index", "");
   IndexOwner index = takeIndex(rawIndex);
 
-  git_strarray paths = {nullptr, 0};
-  checkGit(git_index_add_all(index.get(), &paths, 0, nullptr, nullptr), "add-all", "");
-  checkGit(git_index_write(index.get()), "index-write", "");
+  stageEverything(repo, *index, requireCleanUntracked);
 
   // HEAD points at a commit OID — resolve to its tree for the diff.
   git_oid headCommitOid{};
@@ -153,18 +310,20 @@ SignatureOwner defaultSignature(git_repository& repo) {
 StageAndCommitResult stageAllAndCommit(git_repository& repo,
                                        const char* message,
                                        const char* commitOperation) {
-  return stageAllAndCommitImpl(repo, message, nullptr, commitOperation);
+  // Explicit Commit & push must not silently leave new files behind.
+  return stageAllAndCommitImpl(repo, message, nullptr, commitOperation, true);
 }
 
 StageAndCommitResult stageAllAndCommit(git_repository& repo,
                                        const char* message,
                                        const std::optional<CommitAndInsecureOptions>& options,
                                        const char* commitOperation) {
-  return stageAllAndCommitImpl(repo, message, &options, commitOperation);
+  return stageAllAndCommitImpl(repo, message, &options, commitOperation, true);
 }
 
 bool commitDirtyChanges(git_repository& repo, const char* message) {
-  auto result = stageAllAndCommit(repo, message, "commit-dirty");
+  // Pull auto-commit: stage what we can; do not fail the pull on FUSE lag.
+  auto result = stageAllAndCommitImpl(repo, message, nullptr, "commit-dirty", false);
   return result.sha.has_value();
 }
 
@@ -227,6 +386,7 @@ bool healStaleWorktreeIfIndexMatchesAncestor(git_repository& repo, const git_oid
     return false;
   }
 
+  // Never pair FORCE with REMOVE_UNTRACKED — new notes/attachments must survive heal.
   git_checkout_options coOpts;
   git_checkout_options_init(&coOpts, GIT_CHECKOUT_OPTIONS_VERSION);
   coOpts.checkout_strategy = GIT_CHECKOUT_FORCE;

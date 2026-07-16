@@ -51,6 +51,20 @@ AuthPayload toPayload(const std::optional<GitCredentials>& creds, bool insecure)
   return p;
 }
 
+void applyAndroidRepoConfig(git_repository& repo) {
+  git_config* rawCfg = nullptr;
+  if (git_repository_config(&rawCfg, &repo) != 0 || rawCfg == nullptr) {
+    return;
+  }
+  ConfigOwner cfg = takeConfig(rawCfg);
+  // Directory mtimes often do not update when files are added; untracked cache
+  // then permanently misses new notes/attachments in existing folders.
+  git_config_set_bool(cfg.get(), "core.untrackedCache", 0);
+  // FUSE reports 0777 for everything — avoid spurious mode-only "changes".
+  git_config_set_bool(cfg.get(), "core.filemode", 0);
+  git_config_set_bool(cfg.get(), "core.symlinks", 0);
+}
+
 RepositoryOwner openRepo(const std::string& path) {
   git_repository* raw = nullptr;
   checkGit(git_repository_open_ext(&raw, path.c_str(),
@@ -59,7 +73,9 @@ RepositoryOwner openRepo(const std::string& path) {
   if (raw == nullptr) {
     throw GitError("Open", "git_repository_open returned null for: " + path);
   }
-  return takeRepo(raw);
+  auto repo = takeRepo(raw);
+  applyAndroidRepoConfig(*repo);
+  return repo;
 }
 
 std::optional<std::string> readHeadBranch(git_repository& repo) {
@@ -170,6 +186,8 @@ StatusResult buildStatus(git_repository& repo) {
   opts.flags =
       GIT_STATUS_OPT_INCLUDE_UNTRACKED |
       GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS |
+      GIT_STATUS_OPT_INCLUDE_UNREADABLE |
+      GIT_STATUS_OPT_INCLUDE_UNREADABLE_AS_UNTRACKED |
       GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX |
       GIT_STATUS_OPT_RENAMES_INDEX_TO_WORKDIR |
       GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;

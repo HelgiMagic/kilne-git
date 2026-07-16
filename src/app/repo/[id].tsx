@@ -135,7 +135,12 @@ export default function RepoDetailScreen() {
 
       <View style={styles.buttonRow}>
         <ActionButton label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
-        <ActionButton label="Push" onPress={onPush} disabled={busy} loading={sync.kind === 'pushing'} />
+        <ActionButton
+          label="Push only"
+          onPress={onPush}
+          disabled={busy}
+          loading={sync.kind === 'pushing'}
+        />
       </View>
 
       <Field label="Commit message" hint="Optional. Auto-generated when left blank.">

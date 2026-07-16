@@ -14,6 +14,9 @@ AuthPayload toPayload(const std::optional<GitCredentials>& creds, bool insecure)
 
 RepositoryOwner openRepo(const std::string& path);
 
+/** Persist FUSE-friendly core.* settings (untrackedCache/filemode/symlinks). */
+void applyAndroidRepoConfig(git_repository& repo);
+
 std::optional<std::string> readHeadBranch(git_repository& repo);
 std::optional<std::string> resolveUpstream(git_repository& repo);
 std::string resolveUpstreamOrFallback(git_repository& repo);

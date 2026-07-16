@@ -120,7 +120,10 @@ export async function pull(repo: Repo): Promise<PullResult> {
   return result
 }
 
-export async function commitAllAndPush(repo: Repo, message: string): Promise<void> {
+export async function commitAllAndPush(repo: Repo, message: string): Promise<{
+  filesChanged: number
+  sha?: string
+}> {
   const result = await git().commitAllAndPush(
     nativePath(repo),
     message,
@@ -130,6 +133,10 @@ export async function commitAllAndPush(repo: Repo, message: string): Promise<voi
   if (!result.push.pushed) {
     const sha = result.commit.sha != null ? ` (commit ${result.commit.sha.slice(0, 7)})` : ''
     throw new Error(`Push failed${sha}`)
+  }
+  return {
+    filesChanged: result.commit.filesChanged,
+    sha: result.commit.sha,
   }
 }
 

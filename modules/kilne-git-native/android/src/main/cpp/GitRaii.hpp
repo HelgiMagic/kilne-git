@@ -24,6 +24,7 @@ struct GitPtrDeleters {
   static void tree(git_tree* p) noexcept                    { if (p) git_tree_free(p); }
   static void signature(git_signature* p) noexcept          { if (p) git_signature_free(p); }
   static void statusList(git_status_list* p) noexcept       { if (p) git_status_list_free(p); }
+  static void config(git_config* p) noexcept                { if (p) git_config_free(p); }
 };
 
 using RepositoryOwner       = std::unique_ptr<git_repository,        decltype(&GitPtrDeleters::repository)>;
@@ -35,6 +36,7 @@ using CommitOwner           = std::unique_ptr<git_commit,            decltype(&G
 using TreeOwner             = std::unique_ptr<git_tree,              decltype(&GitPtrDeleters::tree)>;
 using SignatureOwner        = std::unique_ptr<git_signature,         decltype(&GitPtrDeleters::signature)>;
 using StatusListOwner       = std::unique_ptr<git_status_list,       decltype(&GitPtrDeleters::statusList)>;
+using ConfigOwner           = std::unique_ptr<git_config,            decltype(&GitPtrDeleters::config)>;
 
 /** Wraps a raw `git_repository*` into a RAII owner. */
 inline RepositoryOwner takeRepo(git_repository* p) { return RepositoryOwner(p, GitPtrDeleters::repository); }
@@ -48,6 +50,7 @@ inline CommitOwner takeCommit(git_commit* p)       { return CommitOwner(p, GitPt
 inline TreeOwner takeTree(git_tree* p)             { return TreeOwner(p, GitPtrDeleters::tree); }
 inline SignatureOwner takeSig(git_signature* p)    { return SignatureOwner(p, GitPtrDeleters::signature); }
 inline StatusListOwner takeStatus(git_status_list* p) { return StatusListOwner(p, GitPtrDeleters::statusList); }
+inline ConfigOwner takeConfig(git_config* p)       { return ConfigOwner(p, GitPtrDeleters::config); }
 
 /**
  * Payload passed into libgit2's `credentials` and `certificate_check` callbacks.

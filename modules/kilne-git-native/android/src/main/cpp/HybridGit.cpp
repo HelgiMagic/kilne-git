@@ -90,6 +90,7 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
         git_repository* raw = nullptr;
         checkGit(git_clone(&raw, url.c_str(), localPath.c_str(), &cloneOpts), "clone", url);
         auto repo = takeRepo(raw);
+        applyAndroidRepoConfig(*repo);
 
         CloneResult result{};
         result.path = localPath;

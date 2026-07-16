@@ -121,8 +121,9 @@ export interface Git extends HybridObject<{ android: 'c++' }> {
   ): Promise<PullResult>
 
   /**
-   * Stage all changes, commit with `message`, push HEAD (non-force).
-   * No commit is created when there is nothing to stage; push still runs.
+   * Stage all changes (`git add -A` + workdir walk), commit with `message`,
+   * push HEAD (non-force). No commit is created when there is nothing to
+   * stage; push still runs. Throws if new files remain unstageable after retry.
    */
   commitAllAndPush(
     localPath: string,

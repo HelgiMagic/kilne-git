@@ -67,8 +67,16 @@ export async function commitAndPushRepo(repo: Repo, message: string): Promise<vo
   assertNotBusy(repo.id)
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
   try {
-    await git.commitAllAndPush(repo, message)
-    setDone(repo.id, 'Push complete')
+    const result = await git.commitAllAndPush(repo, message)
+    if (result.sha != null && result.filesChanged > 0) {
+      const n = Math.round(result.filesChanged)
+      setDone(
+        repo.id,
+        `Committed ${n} file${n === 1 ? '' : 's'} (${result.sha.slice(0, 7)}) and pushed`,
+      )
+    } else {
+      setDone(repo.id, 'Nothing new to commit — pushed current HEAD')
+    }
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)
@@ -81,7 +89,7 @@ export async function pushRepo(repo: Repo): Promise<void> {
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
   try {
     await git.push(repo)
-    setDone(repo.id, 'Push complete')
+    setDone(repo.id, 'Pushed current HEAD (no new commit)')
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)

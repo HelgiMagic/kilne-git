@@ -88,8 +88,8 @@ The generated files live in `modules/kilne-git-native/nitrogen/generated/`. They
    - On Android 11+, the app will ask you to enable **All files access** for kilne-git so it can write outside its private folder.
 2. **Sync**: open the repo detail screen.
    - **Pull** — fetch + merge upstream.
-   - **Push** — push HEAD without committing.
-   - **Commit all & push** — stage everything, commit with the given message, push.
+   - **Push only** — push HEAD without committing (detail screen).
+   - **Commit all & push** — stage everything (creates, edits, deletes, renames), commit, push.
    - Status panel shows branch, upstream, ahead/behind, staged/working/untracked/conflicted files.
 
 ## Caveats / known limitations
