@@ -8,7 +8,7 @@ namespace {
 
 /**
  * Map libgit2's numeric error class to a short symbolic name.
- * Mirrors the values in `git_error_t` (git2/errors.h).
+ * Mirrors `git_error_t` in git2/errors.h (libgit2 1.9).
  */
 const char* classIdToName(int klass) noexcept {
   switch (klass) {
@@ -38,14 +38,17 @@ const char* classIdToName(int klass) noexcept {
     case GIT_ERROR_SSH:         return "SSH";
     case GIT_ERROR_FILTER:      return "Filter";
     case GIT_ERROR_REVERT:      return "Revert";
-    case GIT_ERROR_HASHSIG:     return "Hashsig";
-    case GIT_ERROR_AUTH:        return "Auth";
-    case GIT_ERROR_HTTP:        return "HTTP";
+    case GIT_ERROR_CALLBACK:    return "Callback";
+    case GIT_ERROR_CHERRYPICK:  return "CherryPick";
+    case GIT_ERROR_DESCRIBE:    return "Describe";
+    case GIT_ERROR_REBASE:      return "Rebase";
+    case GIT_ERROR_FILESYSTEM:  return "Filesystem";
     case GIT_ERROR_PATCH:       return "Patch";
-    case GIT_ERROR_HTTP_401:    return "HTTP 401";
-    case GIT_ERROR_HTTP_403:    return "HTTP 403";
-    case GIT_ERROR_HTTP_404:    return "HTTP 404";
-    case GIT_ERROR_APPLIED:     return "Applied";
+    case GIT_ERROR_WORKTREE:    return "Worktree";
+    case GIT_ERROR_SHA:         return "SHA";
+    case GIT_ERROR_HTTP:        return "HTTP";
+    case GIT_ERROR_INTERNAL:    return "Internal";
+    case GIT_ERROR_GRAFTS:      return "Grafts";
     default:                    return "Unknown";
   }
 }

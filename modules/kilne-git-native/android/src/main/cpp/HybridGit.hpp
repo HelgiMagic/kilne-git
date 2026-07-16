@@ -25,9 +25,9 @@ public:
   ~HybridGit() override;
 
   // HybridObject
-  std::string getExternalMemorySize() noexcept override {
+  size_t getExternalMemorySize() noexcept override {
     // No significant external allocations outside the ones libgit2 tracks itself.
-    return "N/A";
+    return 0;
   }
 
   // Property

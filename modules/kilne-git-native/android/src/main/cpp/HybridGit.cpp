@@ -174,7 +174,7 @@ AnnotatedCommitOwner fetchUpstream(git_repository& repo, const AuthPayload& auth
   checkGit(git_remote_fetch(remote.get(), &refspecs, &fetchOpts, "kilne-git pull"), "fetch", branchName);
 
   git_annotated_commit* rawAnnotated = nullptr;
-  checkGit(git_annotated_commit_from_refname(&rawAnnotated, &repo, upstreamRef.c_str()),
+  checkGit(git_annotated_commit_from_revspec(&rawAnnotated, &repo, upstreamRef.c_str()),
            "lookup-upstream-commit", upstreamRef);
   return takeAnnotated(rawAnnotated);
 }
@@ -368,7 +368,7 @@ std::string HybridGit::getVersion() {
 }
 
 std::shared_ptr<Promise<std::string>> HybridGit::init(const std::string& localPath) {
-  return Promise<std::string>::async([localPath](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+  return Promise<std::string>::async([localPath]() {
     std::lock_guard<std::mutex> lock(mutexForPath(localPath));
     git_repository* raw = nullptr;
     checkGit(git_repository_init(&raw, localPath.c_str(), 0 /*bare=false*/),
@@ -388,7 +388,7 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
     const std::optional<GitCredentials>& credentials,
     const std::optional<CloneOptions>& options) {
   return Promise<CloneResult>::async(
-      [url, localPath, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+      [url, localPath, credentials, options]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
 
         git_clone_options cloneOpts;
@@ -427,7 +427,7 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
     const std::optional<GitCredentials>& credentials,
     const std::optional<InsecureOptions>& options) {
   return Promise<PullResult>::async(
-      [localPath, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+      [localPath, credentials, options]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
         AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
@@ -547,7 +547,7 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
     const std::optional<GitCredentials>& credentials,
     const std::optional<CommitAndInsecureOptions>& options) {
   return Promise<CommitAndPushResult>::async(
-      [localPath, message, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+      [localPath, message, credentials, options]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
 
@@ -629,7 +629,7 @@ std::shared_ptr<Promise<PushResult>> HybridGit::push(
     const std::optional<GitCredentials>& credentials,
     const std::optional<InsecureOptions>& options) {
   return Promise<PushResult>::async(
-      [localPath, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+      [localPath, credentials, options]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
         AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
@@ -638,7 +638,7 @@ std::shared_ptr<Promise<PushResult>> HybridGit::push(
 }
 
 std::shared_ptr<Promise<StatusResult>> HybridGit::status(const std::string& localPath) {
-  return Promise<StatusResult>::async([localPath](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+  return Promise<StatusResult>::async([localPath]() {
     std::lock_guard<std::mutex> lock(mutexForPath(localPath));
     auto repo = openRepo(localPath);
     return buildStatus(*repo);
@@ -646,7 +646,7 @@ std::shared_ptr<Promise<StatusResult>> HybridGit::status(const std::string& loca
 }
 
 std::shared_ptr<Promise<bool>> HybridGit::isRepository(const std::string& localPath) {
-  return Promise<bool>::async([localPath](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+  return Promise<bool>::async([localPath]() {
     git_repository* raw = nullptr;
     const int rc = git_repository_open_ext(&raw, localPath.c_str(),
                                            GIT_REPOSITORY_OPEN_NO_SEARCH, nullptr);
