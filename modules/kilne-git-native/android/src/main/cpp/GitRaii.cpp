@@ -26,7 +26,7 @@ int credentialsCallback(git_credential** out,
   if (data == nullptr) {
     return GIT_ERROR;
   }
-  if (data->username.empty() || data->password.empty()) {
+  if (data->password.empty()) {
     // No credentials supplied — let libgit2 try anonymous transport.
     return GIT_PASSTHROUGH;
   }
@@ -35,7 +35,14 @@ int credentialsCallback(git_credential** out,
                       "Authentication failed after 4 attempts — credentials rejected by server.");
     return GIT_ERROR;
   }
-  const char* user = username_from_url != nullptr ? username_from_url : data->username.c_str();
+  // Prefer the username the app configured (e.g. x-access-token). Fall back to
+  // the URL-embedded user only when none was supplied.
+  const char* user = !data->username.empty()
+                         ? data->username.c_str()
+                         : username_from_url;
+  if (user == nullptr || user[0] == '\0') {
+    user = "git";
+  }
   return git_credential_userpass_plaintext_new(out, user, data->password.c_str());
 }
 

@@ -3,13 +3,12 @@
 #include "GitErrors.hpp"
 #include "GitRaii.hpp"
 
-#include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <memory>
 #include <mutex>
-#include <sstream>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <git2.h>
@@ -18,10 +17,20 @@ namespace margelo::nitro::kilne::git {
 
 namespace {
 
-// Global libgit2 refcount — multiple HybridGit instances can coexist safely.
 std::once_flag g_libgit2InitOnce;
 
-/** Resolve a `GitCredentials` optional into an `AuthPayload` ready for callbacks. */
+/** Serialize all libgit2 work on a given repository path. */
+std::mutex& mutexForPath(const std::string& path) {
+  static std::mutex mapMutex;
+  static std::unordered_map<std::string, std::shared_ptr<std::mutex>> locks;
+  std::lock_guard<std::mutex> guard(mapMutex);
+  auto& entry = locks[path];
+  if (!entry) {
+    entry = std::make_shared<std::mutex>();
+  }
+  return *entry;
+}
+
 AuthPayload toPayload(const std::optional<GitCredentials>& creds, bool insecure) {
   AuthPayload p;
   p.insecure = insecure;
@@ -32,19 +41,32 @@ AuthPayload toPayload(const std::optional<GitCredentials>& creds, bool insecure)
   return p;
 }
 
-/** Convert a `git_status_t` bitmask entry to the simplified JS enum. */
+constexpr unsigned int kIndexStatusMask =
+    GIT_STATUS_INDEX_NEW | GIT_STATUS_INDEX_MODIFIED | GIT_STATUS_INDEX_DELETED |
+    GIT_STATUS_INDEX_RENAMED | GIT_STATUS_INDEX_TYPECHANGE;
+
+constexpr unsigned int kWorktreeStatusMask =
+    GIT_STATUS_WT_NEW | GIT_STATUS_WT_MODIFIED | GIT_STATUS_WT_DELETED |
+    GIT_STATUS_WT_TYPECHANGE | GIT_STATUS_WT_RENAMED | GIT_STATUS_WT_UNREADABLE;
+
+/** Convert a `git_status_t` bitmask (index or worktree subset) to the JS enum. */
 FileState decodeStatus(unsigned int status) noexcept {
-  // GIT_STATUS_CURRENT == 0 by definition; never passed here.
-  if (status & GIT_STATUS_INDEX_NEW || status & GIT_STATUS_WT_NEW)              return FileState::NEW;
-  if (status & GIT_STATUS_INDEX_MODIFIED || status & GIT_STATUS_WT_MODIFIED)    return FileState::MODIFIED;
-  if (status & GIT_STATUS_INDEX_DELETED || status & GIT_STATUS_WT_DELETED)      return FileState::DELETED;
-  if (status & GIT_STATUS_INDEX_RENAMED || status & GIT_STATUS_WT_RENAMED)      return FileState::RENAMED;
-  if (status & GIT_STATUS_INDEX_TYPECHANGE || status & GIT_STATUS_WT_TYPECHANGE) return FileState::TYPECHANGE;
-  if (status & GIT_STATUS_CONFLICTED)                                            return FileState::CONFLICTED;
+  if (status == 0) return FileState::CURRENT;
+  if (status & GIT_STATUS_CONFLICTED) return FileState::CONFLICTED;
+  if (status & (GIT_STATUS_INDEX_NEW | GIT_STATUS_WT_NEW)) return FileState::NEW;
+  if (status & (GIT_STATUS_INDEX_MODIFIED | GIT_STATUS_WT_MODIFIED)) return FileState::MODIFIED;
+  if (status & (GIT_STATUS_INDEX_DELETED | GIT_STATUS_WT_DELETED)) return FileState::DELETED;
+  if (status & (GIT_STATUS_INDEX_RENAMED | GIT_STATUS_WT_RENAMED)) return FileState::RENAMED;
+  if (status & (GIT_STATUS_INDEX_TYPECHANGE | GIT_STATUS_WT_TYPECHANGE)) return FileState::TYPECHANGE;
   return FileState::CURRENT;
 }
 
-/** Open a repository or throw. Always returns a valid owner. */
+const char* deltaPath(const git_diff_delta* delta) noexcept {
+  if (delta == nullptr) return nullptr;
+  if (delta->new_file.path != nullptr) return delta->new_file.path;
+  return delta->old_file.path;
+}
+
 RepositoryOwner openRepo(const std::string& path) {
   git_repository* raw = nullptr;
   checkGit(git_repository_open_ext(&raw, path.c_str(),
@@ -56,10 +78,22 @@ RepositoryOwner openRepo(const std::string& path) {
   return takeRepo(raw);
 }
 
-/**
- * Look up the configured upstream for `head` (e.g. "origin/main").
- * Returns an empty optional when no upstream is set.
- */
+std::optional<std::string> readHeadBranch(git_repository& repo) {
+  git_reference* rawHead = nullptr;
+  if (git_repository_head(&rawHead, &repo) != 0 || rawHead == nullptr) {
+    return std::nullopt;
+  }
+  ReferenceOwner head = takeRef(rawHead);
+  if (git_reference_is_branch(head.get()) == 0) {
+    return std::nullopt;
+  }
+  const char* branchName = nullptr;
+  if (git_branch_name(&branchName, head.get()) != 0 || branchName == nullptr) {
+    return std::nullopt;
+  }
+  return std::string(branchName);
+}
+
 std::optional<std::string> resolveUpstream(git_repository& repo) {
   ReferenceOwner head(nullptr, GitPtrDeleters::reference);
   git_reference* rawHead = nullptr;
@@ -77,84 +111,80 @@ std::optional<std::string> resolveUpstream(git_repository& repo) {
   if (name == nullptr) {
     return std::nullopt;
   }
-  return std::string(name);  // full refname, e.g. "refs/remotes/origin/main"
+  return std::string(name);
 }
 
-/** Read the short branch name currently checked out (or null for detached HEAD). */
-std::optional<std::string> readHeadBranch(git_repository& repo) {
-  git_reference* rawHead = nullptr;
-  if (git_repository_head(&rawHead, &repo) != 0 || rawHead == nullptr) {
-    return std::nullopt;
-  }
-  ReferenceOwner head = takeRef(rawHead);
-  if (git_reference_is_branch(head.get()) == 0) {
-    return std::nullopt;  // detached HEAD
-  }
-  const char* branchName = nullptr;
-  if (git_branch_name(&branchName, head.get()) != 0 || branchName == nullptr) {
-    return std::nullopt;
-  }
-  return std::string(branchName);
-}
-
-/**
- * Fetch from upstream and return the annotated commit of FETCH_HEAD.
- * Performs a network round-trip. Throws on auth / network failures.
- */
-AnnotatedCommitOwner fetchUpstream(git_repository& repo, const AuthPayload& auth) {
+/** Prefer configured upstream; otherwise fall back to refs/remotes/origin/<branch>. */
+std::string resolveUpstreamOrFallback(git_repository& repo) {
   auto upstream = resolveUpstream(repo);
-  if (!upstream.has_value()) {
-    throw GitError("Fetch", "No upstream is configured for the current branch.");
+  if (upstream.has_value()) {
+    return *upstream;
   }
-  const std::string& upstreamRef = *upstream;
+  auto branch = readHeadBranch(repo);
+  if (!branch.has_value()) {
+    throw GitError("Fetch", "No upstream configured and HEAD is detached.");
+  }
+  return "refs/remotes/origin/" + *branch;
+}
+
+std::string remoteNameFromUpstream(const std::string& upstreamRef) {
+  constexpr const char* kRemotePrefix = "refs/remotes/";
+  if (upstreamRef.rfind(kRemotePrefix, 0) != 0) {
+    return "origin";
+  }
+  const std::string afterPrefix = upstreamRef.substr(std::strlen(kRemotePrefix));
+  const auto slashPos = afterPrefix.find('/');
+  if (slashPos == std::string::npos) {
+    return "origin";
+  }
+  return afterPrefix.substr(0, slashPos);
+}
+
+std::string branchNameFromUpstream(const std::string& upstreamRef) {
   constexpr const char* kRemotePrefix = "refs/remotes/";
   if (upstreamRef.rfind(kRemotePrefix, 0) != 0) {
     throw GitError("Fetch", "Upstream ref is not under refs/remotes/: " + upstreamRef);
   }
-  // Split "refs/remotes/<remote>/<branch>" into remote + branch.
   const std::string afterPrefix = upstreamRef.substr(std::strlen(kRemotePrefix));
   const auto slashPos = afterPrefix.find('/');
   if (slashPos == std::string::npos) {
     throw GitError("Fetch", "Cannot parse remote/branch from upstream: " + upstreamRef);
   }
-  const std::string remoteName = afterPrefix.substr(0, slashPos);
-  const std::string branchName = afterPrefix.substr(slashPos + 1);
+  return afterPrefix.substr(slashPos + 1);
+}
+
+AnnotatedCommitOwner fetchUpstream(git_repository& repo, const AuthPayload& auth) {
+  const std::string upstreamRef = resolveUpstreamOrFallback(repo);
+  const std::string remoteName = remoteNameFromUpstream(upstreamRef);
+  const std::string branchName = branchNameFromUpstream(upstreamRef);
 
   git_remote* rawRemote = nullptr;
   checkGit(git_remote_lookup(&rawRemote, &repo, remoteName.c_str()), "lookup-remote", remoteName);
   RemoteOwner remote = takeRemote(rawRemote);
 
-  AuthPayload authCopy = auth;  // libgit2 calls may mutate attempts counter
+  AuthPayload authCopy = auth;
   git_fetch_options fetchOpts;
   checkGit(git_fetch_options_init(&fetchOpts, GIT_FETCH_OPTIONS_VERSION), "fetch-init");
   applyAuth(fetchOpts.callbacks, authCopy);
-  // Always update FETCH_HEAD so we can resolve the merge target.
+
   const std::string refspecStr =
       "+refs/heads/" + branchName + ":refs/remotes/" + remoteName + "/" + branchName;
   const char* refspec = refspecStr.c_str();
   git_strarray refspecs = {const_cast<char**>(&refspec), 1};
   checkGit(git_remote_fetch(remote.get(), &refspecs, &fetchOpts, "kilne-git pull"), "fetch", branchName);
 
-  // Find the OID of the upstream branch we just fetched.
   git_annotated_commit* rawAnnotated = nullptr;
   checkGit(git_annotated_commit_from_refname(&rawAnnotated, &repo, upstreamRef.c_str()),
            "lookup-upstream-commit", upstreamRef);
   return takeAnnotated(rawAnnotated);
 }
 
-/**
- * Convert a `git_oid` to its hex string representation.
- */
 std::string oidToHex(const git_oid* oid) {
   char buf[GIT_OID_SHA1_HEXSIZE + 1] = {0};
   git_oid_tostr(buf, sizeof(buf), oid);
   return std::string(buf);
 }
 
-/**
- * Build a `StatusResult` from the current repository state. Reads both the
- * status list and ahead/behind counts relative to upstream.
- */
 StatusResult buildStatus(git_repository& repo) {
   git_status_options opts;
   git_status_options_init(&opts, GIT_STATUS_OPTIONS_VERSION);
@@ -163,6 +193,7 @@ StatusResult buildStatus(git_repository& repo) {
       GIT_STATUS_OPT_INCLUDE_UNTRACKED |
       GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS |
       GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX |
+      GIT_STATUS_OPT_RENAMES_INDEX_TO_WORKDIR |
       GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
   opts.rename_threshold = 50;
 
@@ -184,53 +215,50 @@ StatusResult buildStatus(git_repository& repo) {
   const std::size_t count = git_status_list_entrycount(list.get());
   for (std::size_t i = 0; i < count; ++i) {
     const git_status_entry* entry = git_status_byindex(list.get(), i);
-    if (entry == nullptr || entry->head_to_index == nullptr) {
-      // Defensive: untracked files have head_to_index == NULL but status == WT_NEW.
-      if (entry != nullptr && entry->status == GIT_STATUS_WT_NEW && entry->path != nullptr) {
-        result.untracked.push_back(entry->path);
-        result.isClean = false;
-      }
+    if (entry == nullptr) {
       continue;
     }
-    const char* path = entry->head_to_index->old_file.path != nullptr
-                           ? entry->head_to_index->old_file.path
-                           : entry->head_to_index->new_file.path;
-    if (path == nullptr && entry->path != nullptr) {
-      path = entry->path;
+
+    const char* path = deltaPath(entry->head_to_index);
+    if (path == nullptr) {
+      path = deltaPath(entry->index_to_workdir);
     }
     if (path == nullptr) {
       continue;
     }
+
     const unsigned int status = entry->status;
     FileStatusEntry fe{
         /*path=*/std::string(path),
-        /*worktree=*/decodeStatus(status & 0xFFFF0000u),  // WT_* bits live high
-        /*index=*/decodeStatus(status & 0x0000FFFFu),
+        /*worktree=*/decodeStatus(status & kWorktreeStatusMask),
+        /*index=*/decodeStatus(status & kIndexStatusMask),
     };
+    if ((status & GIT_STATUS_CONFLICTED) != 0) {
+      fe.worktree = FileState::CONFLICTED;
+      fe.index = FileState::CONFLICTED;
+    }
 
-    bool isStaged = (status & (GIT_STATUS_INDEX_NEW | GIT_STATUS_INDEX_MODIFIED |
-                               GIT_STATUS_INDEX_DELETED | GIT_STATUS_INDEX_RENAMED |
-                               GIT_STATUS_INDEX_TYPECHANGE)) != 0;
-    bool isWorking = (status & (GIT_STATUS_WT_MODIFIED | GIT_STATUS_WT_DELETED |
-                                GIT_STATUS_WT_TYPECHANGE | GIT_STATUS_WT_RENAMED)) != 0;
-    bool isUntracked = (status & GIT_STATUS_WT_NEW) != 0;
-    bool isConflict = (status & GIT_STATUS_CONFLICTED) != 0;
+    const bool isStaged = (status & kIndexStatusMask) != 0;
+    const bool isWorking =
+        (status & (GIT_STATUS_WT_MODIFIED | GIT_STATUS_WT_DELETED |
+                   GIT_STATUS_WT_TYPECHANGE | GIT_STATUS_WT_RENAMED |
+                   GIT_STATUS_WT_UNREADABLE)) != 0;
+    const bool isUntracked = (status & GIT_STATUS_WT_NEW) != 0;
+    const bool isConflict = (status & GIT_STATUS_CONFLICTED) != 0;
 
-    if (isStaged)   result.staged.push_back(fe);
-    if (isWorking)  result.working.push_back(fe);
+    if (isStaged) result.staged.push_back(fe);
+    if (isWorking) result.working.push_back(fe);
     if (isUntracked) result.untracked.push_back(std::string(path));
     if (isConflict) result.conflicted.push_back(std::string(path));
     if (status != GIT_STATUS_CURRENT) result.isClean = false;
   }
 
-  // Branch + upstream info
   result.head = readHeadBranch(repo);
   auto upstream = resolveUpstream(repo);
   if (upstream.has_value()) {
-    result.upstream = upstream;  // full refname like "refs/remotes/origin/main"
+    result.upstream = upstream;
   }
 
-  // Ahead / behind counts
   git_oid localOid{};
   git_oid upstreamOid{};
   if (git_reference_name_to_id(&localOid, &repo, "HEAD") == 0 && upstream.has_value() &&
@@ -244,6 +272,76 @@ StatusResult buildStatus(git_repository& repo) {
   }
 
   return result;
+}
+
+PushResult pushHead(git_repository& repo, const AuthPayload& auth) {
+  const std::string upstreamRef = resolveUpstreamOrFallback(repo);
+  const std::string remoteName = remoteNameFromUpstream(upstreamRef);
+
+  git_remote* rawRemote = nullptr;
+  checkGit(git_remote_lookup(&rawRemote, &repo, remoteName.c_str()),
+           "lookup-remote", remoteName);
+  RemoteOwner remote = takeRemote(rawRemote);
+
+  AuthPayload authCopy = auth;
+  git_push_options pushOpts;
+  git_push_options_init(&pushOpts, GIT_PUSH_OPTIONS_VERSION);
+  applyAuth(pushOpts.callbacks, authCopy);
+
+  auto headBranch = readHeadBranch(repo);
+  if (!headBranch.has_value()) {
+    throw GitError("Push", "Cannot push: detached HEAD.");
+  }
+  // Non-force refspec — refuse non-fast-forward updates on the remote.
+  const std::string pushSpec = "refs/heads/" + *headBranch + ":refs/heads/" + *headBranch;
+  char* specStr = const_cast<char*>(pushSpec.c_str());
+  git_strarray pushRefs = {&specStr, 1};
+  checkGit(git_remote_push(remote.get(), &pushRefs, &pushOpts), "push", pushSpec);
+
+  PushResult result{};
+  result.pushed = true;
+  result.updated = true;
+  return result;
+}
+
+SignatureOwner makeAuthorSignature(git_repository& repo,
+                                   const std::optional<CommitAndInsecureOptions>& options) {
+  std::string authorName = "kilne-git";
+  std::string authorEmail = "kilne-git@localhost";
+  if (options.has_value()) {
+    if (options->authorName.has_value()) authorName = *options->authorName;
+    if (options->authorEmail.has_value()) authorEmail = *options->authorEmail;
+  }
+
+  git_signature* rawSig = nullptr;
+  if (options.has_value() &&
+      (options->authorName.has_value() || options->authorEmail.has_value())) {
+    checkGit(git_signature_now(&rawSig, authorName.c_str(), authorEmail.c_str()),
+             "signature-author", "");
+  } else if (git_signature_default(&rawSig, &repo) != 0) {
+    checkGit(git_signature_now(&rawSig, authorName.c_str(), authorEmail.c_str()),
+             "signature-author-default", "");
+  }
+  return takeSig(rawSig);
+}
+
+SignatureOwner makeCommitterSignature(git_repository& repo,
+                                      const std::optional<CommitAndInsecureOptions>& options,
+                                      const git_signature* authorFallback) {
+  if (options.has_value() &&
+      (options->committerName.has_value() || options->committerEmail.has_value())) {
+    const std::string name = options->committerName.value_or(
+        authorFallback != nullptr ? std::string(authorFallback->name) : "kilne-git");
+    const std::string email = options->committerEmail.value_or(
+        authorFallback != nullptr ? std::string(authorFallback->email) : "kilne-git@localhost");
+    git_signature* rawSig = nullptr;
+    checkGit(git_signature_now(&rawSig, name.c_str(), email.c_str()), "signature-committer", "");
+    return takeSig(rawSig);
+  }
+  // Same identity as author when committer overrides are omitted.
+  git_signature* rawDup = nullptr;
+  checkGit(git_signature_dup(&rawDup, authorFallback), "signature-committer-dup", "");
+  return takeSig(rawDup);
 }
 
 }  // namespace
@@ -260,9 +358,8 @@ HybridGit::HybridGit() {
 
 HybridGit::~HybridGit() {
   if (_initialised.exchange(false, std::memory_order_acq_rel)) {
-    // NB: we intentionally do NOT call git_libgit2_shutdown() because the
-    // process lives only as long as the JS runtime and other code might still
-    // hold libgit2 state. libgit2 cleans up at process exit anyway.
+    // Intentionally do not call git_libgit2_shutdown() — process lifetime matches
+    // the JS runtime and other code may still hold libgit2 state.
   }
 }
 
@@ -270,26 +367,21 @@ std::string HybridGit::getVersion() {
   return std::string(LIBGIT2_VERSION);
 }
 
-// ----------------------------------------------------------------------------
-// init
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<std::string>> HybridGit::init(const std::string& localPath) {
   return Promise<std::string>::async([localPath](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+    std::lock_guard<std::mutex> lock(mutexForPath(localPath));
     git_repository* raw = nullptr;
     checkGit(git_repository_init(&raw, localPath.c_str(), 0 /*bare=false*/),
              "init", localPath);
     auto repo = takeRepo(raw);
-    char* resolved = git_repository_path(repo.get());
-    if (resolved == nullptr) {
-      throw GitError("Init", "git_repository_path returned null after init");
+    const char* workdir = git_repository_workdir(repo.get());
+    if (workdir == nullptr) {
+      throw GitError("Init", "git_repository_workdir returned null after init");
     }
-    return std::string(resolved);
+    return std::string(workdir);
   });
 }
 
-// ----------------------------------------------------------------------------
-// clone
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
     const std::string& url,
     const std::string& localPath,
@@ -297,30 +389,25 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
     const std::optional<CloneOptions>& options) {
   return Promise<CloneResult>::async(
       [url, localPath, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+        std::lock_guard<std::mutex> lock(mutexForPath(localPath));
+
         git_clone_options cloneOpts;
         checkGit(git_clone_options_init(&cloneOpts, GIT_CLONE_OPTIONS_VERSION), "clone-init");
+
+        std::string branchOwned;
         if (options.has_value()) {
           if (options->branch.has_value()) {
-            cloneOpts.checkout_branch = options->branch->c_str();
+            branchOwned = *options->branch;
+            cloneOpts.checkout_branch = branchOwned.c_str();
           }
           if (options->depth.has_value() && *options->depth > 0) {
             cloneOpts.fetch_opts.depth = static_cast<unsigned int>(*options->depth);
           }
-          const bool insecure = options->insecure.value_or(false);
-          if (insecure) {
-            AuthPayload auth = toPayload(credentials, true);
-            applyAuth(cloneOpts.fetch_opts.callbacks, auth);
-            git_repository* raw = nullptr;
-            checkGit(git_clone(&raw, url.c_str(), localPath.c_str(), &cloneOpts), "clone", url);
-            auto repo = takeRepo(raw);
-            CloneResult result{};
-            result.path = localPath;
-            result.branch = options->branch.value_or("HEAD");
-            result.receivedObjects = 0;
-            return result;
-          }
         }
-        AuthPayload auth = toPayload(credentials, false);
+
+        const bool insecure =
+            options.has_value() && options->insecure.value_or(false);
+        AuthPayload auth = toPayload(credentials, insecure);
         applyAuth(cloneOpts.fetch_opts.callbacks, auth);
 
         git_repository* raw = nullptr;
@@ -329,29 +416,24 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
 
         CloneResult result{};
         result.path = localPath;
-        // libgit2 doesn't surface the checkout branch name directly; use what
-        // we asked for, or HEAD.
-        result.branch = options->branch.value_or("HEAD");
+        result.branch = branchOwned.empty() ? "HEAD" : branchOwned;
         result.receivedObjects = 0;
         return result;
       });
 }
 
-// ----------------------------------------------------------------------------
-// pull
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<PullResult>> HybridGit::pull(
     const std::string& localPath,
     const std::optional<GitCredentials>& credentials,
     const std::optional<InsecureOptions>& options) {
   return Promise<PullResult>::async(
       [localPath, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+        std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
         AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
 
         AnnotatedCommitOwner upstreamCommit = fetchUpstream(*repo, auth);
 
-        // Compare upstream and local HEAD to decide what to do.
         git_oid localOid{};
         checkGit(git_reference_name_to_id(&localOid, repo.get(), "HEAD"), "resolve-head", "HEAD");
         const git_oid* upstreamOid = git_annotated_commit_id(upstreamCommit.get());
@@ -368,24 +450,20 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
         result.conflicted = {};
 
         if (behind == 0) {
-          // Nothing to integrate — already up to date.
           return result;
         }
 
-        // Try fast-forward first.
         if (ahead == 0) {
-          // Move the local branch ref to upstream's commit, then check it out.
           const git_oid* target = git_annotated_commit_id(upstreamCommit.get());
           auto branch = readHeadBranch(*repo);
           if (!branch.has_value()) {
             throw GitError("Pull", "Cannot fast-forward: detached HEAD.");
           }
-          checkGit(git_reference_create(nullptr, repo.get(),
-                                        ("refs/heads/" + *branch).c_str(),
+          const std::string branchRef = "refs/heads/" + *branch;
+          checkGit(git_reference_create(nullptr, repo.get(), branchRef.c_str(),
                                         target, /*force=*/1, "kilne-git pull"),
                    "fast-forward-ref", *branch);
-          checkGit(git_repository_set_head(repo.get(),
-                                           ("refs/heads/" + *branch).c_str()),
+          checkGit(git_repository_set_head(repo.get(), branchRef.c_str()),
                    "fast-forward-set-head", *branch);
           git_checkout_options coOpts;
           git_checkout_options_init(&coOpts, GIT_CHECKOUT_OPTIONS_VERSION);
@@ -395,23 +473,20 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
           return result;
         }
 
-        // Diverged — perform a real merge.
         const git_annotated_commit* heads[] = {upstreamCommit.get()};
         git_merge_options mergeOpts;
         git_merge_options_init(&mergeOpts, GIT_MERGE_OPTIONS_VERSION);
         git_checkout_options checkoutOpts;
         git_checkout_options_init(&checkoutOpts, GIT_CHECKOUT_OPTIONS_VERSION);
         checkoutOpts.checkout_strategy = GIT_CHECKOUT_SAFE;
-        checkGit(git_merge(repo.get(), heads, 1, &mergeOpts, &checkoutOpts),
-                 "merge", "");
+        checkGit(git_merge(repo.get(), heads, 1, &mergeOpts, &checkoutOpts), "merge", "");
 
-        // Detect conflicts.
         IndexOwner index(nullptr, GitPtrDeleters::index);
         git_index* rawIndex = nullptr;
         checkGit(git_repository_index(&rawIndex, repo.get()), "merge-index", "");
         index = takeIndex(rawIndex);
-        const size_t conflictCount = git_index_has_conflicts(index.get()) ? 1 : 0;
-        if (conflictCount > 0) {
+
+        if (git_index_has_conflicts(index.get())) {
           git_index_conflict_iterator* it = nullptr;
           if (git_index_conflict_iterator_new(&it, index.get()) == 0) {
             const git_index_entry* ancestor = nullptr;
@@ -426,24 +501,24 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
             }
             git_index_conflict_iterator_free(it);
           }
-          return result;  // conflicts present — user must resolve
+          // Leave merge state on disk so the user can resolve conflicts.
+          return result;
         }
-        result.merged = true;
 
-        // libgit2 leaves the merge in progress on disk. To match `git pull`'s
-        // default behaviour (auto-commit on clean merge) we need to commit.
         git_signature* rawSig = nullptr;
-        checkGit(git_signature_default(&rawSig, repo.get()), "merge-signature", "");
+        if (git_signature_default(&rawSig, repo.get()) != 0) {
+          checkGit(git_signature_now(&rawSig, "kilne-git", "kilne-git@localhost"),
+                   "merge-signature", "");
+        }
         SignatureOwner sig = takeSig(rawSig);
 
-        // Build the tree from the (already-updated) index.
         git_oid treeOid{};
         checkGit(git_index_write_tree(&treeOid, index.get()), "merge-write-tree", "");
-        git_tree* rawTree2 = nullptr;
-        checkGit(git_tree_lookup(&rawTree2, repo.get(), &treeOid), "merge-lookup-tree", "");
-        TreeOwner tree = takeTree(rawTree2);
+        checkGit(git_index_write(index.get()), "merge-index-write", "");
+        git_tree* rawTree = nullptr;
+        checkGit(git_tree_lookup(&rawTree, repo.get(), &treeOid), "merge-lookup-tree", "");
+        TreeOwner tree = takeTree(rawTree);
 
-        // Parents = HEAD + upstream.
         git_commit* rawHeadCommit = nullptr;
         checkGit(git_commit_lookup(&rawHeadCommit, repo.get(), &localOid), "merge-head", "");
         CommitOwner headCommit = takeCommit(rawHeadCommit);
@@ -460,13 +535,12 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
                                    sig.get(), sig.get(), nullptr,
                                    "Merge upstream", tree.get(), 2, parents),
                  "merge-commit", "");
+        checkGit(git_repository_state_cleanup(repo.get()), "merge-cleanup", "");
+        result.merged = true;
         return result;
       });
 }
 
-// ----------------------------------------------------------------------------
-// commitAllAndPush
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
     const std::string& localPath,
     const std::string& message,
@@ -474,25 +548,32 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
     const std::optional<CommitAndInsecureOptions>& options) {
   return Promise<CommitAndPushResult>::async(
       [localPath, message, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+        std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
 
-        // Stage everything (respects .gitignore).
         git_index* rawIndex = nullptr;
         checkGit(git_repository_index(&rawIndex, repo.get()), "index", "");
         IndexOwner index = takeIndex(rawIndex);
 
-        git_strarray paths = {nullptr, 0};  // empty -> "."
-        checkGit(git_index_add_all(index.get(), &paths, 0, nullptr), "add-all", "");
+        git_strarray paths = {nullptr, 0};
+        checkGit(git_index_add_all(index.get(), &paths, 0, nullptr, nullptr), "add-all", "");
         checkGit(git_index_write(index.get()), "index-write", "");
 
-        // Compute number of files that changed in the index vs HEAD.
-        git_tree* rawHeadTree = nullptr;
-        git_oid headTreeOid{};
-        bool hasHead = git_reference_name_to_id(&headTreeOid, repo.get(), "HEAD") == 0;
+        // HEAD points at a commit OID — resolve to its tree for the diff.
+        git_oid headCommitOid{};
+        const bool hasHead =
+            git_reference_name_to_id(&headCommitOid, repo.get(), "HEAD") == 0;
+
+        CommitOwner parentCommit(nullptr, GitPtrDeleters::commit);
+        TreeOwner headTree(nullptr, GitPtrDeleters::tree);
         if (hasHead) {
-          checkGit(git_tree_lookup(&rawHeadTree, repo.get(), &headTreeOid), "head-tree", "");
+          git_commit* rawParent = nullptr;
+          checkGit(git_commit_lookup(&rawParent, repo.get(), &headCommitOid), "lookup-parent", "");
+          parentCommit = takeCommit(rawParent);
+          git_tree* rawHeadTree = nullptr;
+          checkGit(git_commit_tree(&rawHeadTree, parentCommit.get()), "head-tree", "");
+          headTree = takeTree(rawHeadTree);
         }
-        TreeOwner headTree = takeTree(rawHeadTree);
 
         git_diff_options diffOpts;
         git_diff_options_init(&diffOpts, GIT_DIFF_OPTIONS_VERSION);
@@ -509,97 +590,32 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
         commitResult.filesChanged = static_cast<double>(filesChanged);
 
         if (filesChanged > 0) {
-          // Write the new tree.
           git_oid newTreeOid{};
           checkGit(git_index_write_tree(&newTreeOid, index.get()), "write-tree", "");
           git_tree* rawNewTree = nullptr;
           checkGit(git_tree_lookup(&rawNewTree, repo.get(), &newTreeOid), "lookup-tree", "");
           TreeOwner newTree = takeTree(rawNewTree);
 
-          // Build signature.
-          git_signature* rawSig = nullptr;
-          std::string authorName = "kilne-git";
-          std::string authorEmail = "kilne-git@localhost";
-          std::string committerName = authorName;
-          std::string committerEmail = authorEmail;
-          if (options.has_value()) {
-            if (options->authorName.has_value())  authorName = *options->authorName;
-            if (options->authorEmail.has_value()) authorEmail = *options->authorEmail;
-            if (options->committerName.has_value())  committerName = *options->committerName;
-            if (options->committerEmail.has_value()) committerEmail = *options->committerEmail;
-          }
-          // Try the configured signature first, then fall back to override / defaults.
-          if (options.has_value() &&
-              (options->authorName.has_value() || options->authorEmail.has_value())) {
-            checkGit(git_signature_now(&rawSig, authorName.c_str(), authorEmail.c_str()),
-                     "signature-now", "");
-          } else if (git_signature_default(&rawSig, repo.get()) != 0) {
-            checkGit(git_signature_now(&rawSig, authorName.c_str(), authorEmail.c_str()),
-                     "signature-default", "");
-          }
-          SignatureOwner sig = takeSig(rawSig);
+          SignatureOwner author = makeAuthorSignature(*repo, options);
+          SignatureOwner committer = makeCommitterSignature(*repo, options, author.get());
 
-          // Parent commit (HEAD), if any.
-          std::vector<git_commit*> parentPtrs;
-          std::vector<CommitOwner> parentOwners;
+          std::vector<const git_commit*> parentPtrs;
           if (hasHead) {
-            git_commit* rawParent = nullptr;
-            checkGit(git_commit_lookup(&rawParent, repo.get(), &headTreeOid), "lookup-parent", "");
-            parentOwners.push_back(takeCommit(rawParent));
-            parentPtrs.push_back(parentOwners.back().get());
+            parentPtrs.push_back(parentCommit.get());
           }
 
           git_oid commitOid{};
           checkGit(git_commit_create(&commitOid, repo.get(), "HEAD",
-                                     sig.get(), sig.get(), nullptr,
+                                     author.get(), committer.get(), nullptr,
                                      message.c_str(), newTree.get(),
                                      parentPtrs.size(), parentPtrs.data()),
                    "commit-create", "");
           commitResult.sha = oidToHex(&commitOid);
         }
 
-        // Push HEAD to upstream regardless of whether we created a commit.
-        AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
-        git_remote* rawRemote = nullptr;
-        // Try configured upstream remote; if none, fall back to "origin".
-        auto upstream = resolveUpstream(*repo);
-        std::string remoteName = "origin";
-        if (upstream.has_value()) {
-          // upstream is like "refs/remotes/<remote>/<branch>"
-          constexpr const char* kPrefix = "refs/remotes/";
-          if (upstream->rfind(kPrefix, 0) == 0) {
-            const std::string after = upstream->substr(std::strlen(kPrefix));
-            const auto slash = after.find('/');
-            if (slash != std::string::npos) {
-              remoteName = after.substr(0, slash);
-            }
-          }
-        }
-        if (git_remote_lookup(&rawRemote, repo.get(), remoteName.c_str()) != 0) {
-          // No "origin" — nothing to push to.
-          CommitAndPushResult combined{};
-          combined.commit = commitResult;
-          combined.push.pushed = false;
-          combined.push.updated = false;
-          return combined;
-        }
-        RemoteOwner remote = takeRemote(rawRemote);
-        git_push_options pushOpts;
-        git_push_options_init(&pushOpts, GIT_PUSH_OPTIONS_VERSION);
-        applyAuth(pushOpts.callbacks, auth);
-
-        // Push HEAD to refs/heads/<branch> on the remote.
-        auto headBranch = readHeadBranch(*repo);
-        const std::string localRef = headBranch.has_value()
-            ? ("refs/heads/" + *headBranch)
-            : std::string("HEAD");
-        const std::string pushSpec = "+" + localRef + ":" + localRef;
-        char* specStr = const_cast<char*>(pushSpec.c_str());
-        git_strarray pushRefs = {&specStr, 1};
-        const int pushRc = git_remote_push(remote.get(), &pushRefs, &pushOpts);
-        PushResult pushResult{};
-        pushResult.pushed = (pushRc == 0);
-        pushResult.updated = (pushRc == 0);
+        AuthPayload auth =
+            toPayload(credentials, options.has_value() && options->insecure.value_or(false));
+        PushResult pushResult = pushHead(*repo, auth);
 
         CommitAndPushResult combined{};
         combined.commit = commitResult;
@@ -608,68 +624,27 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
       });
 }
 
-// ----------------------------------------------------------------------------
-// push
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<PushResult>> HybridGit::push(
     const std::string& localPath,
     const std::optional<GitCredentials>& credentials,
     const std::optional<InsecureOptions>& options) {
   return Promise<PushResult>::async(
       [localPath, credentials, options](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+        std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
         AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
-
-        auto upstream = resolveUpstream(*repo);
-        std::string remoteName = "origin";
-        if (upstream.has_value()) {
-          constexpr const char* kPrefix = "refs/remotes/";
-          if (upstream->rfind(kPrefix, 0) == 0) {
-            const std::string after = upstream->substr(std::strlen(kPrefix));
-            const auto slash = after.find('/');
-            if (slash != std::string::npos) {
-              remoteName = after.substr(0, slash);
-            }
-          }
-        }
-        git_remote* rawRemote = nullptr;
-        checkGit(git_remote_lookup(&rawRemote, repo.get(), remoteName.c_str()),
-                 "lookup-remote", remoteName);
-        RemoteOwner remote = takeRemote(rawRemote);
-
-        git_push_options pushOpts;
-        git_push_options_init(&pushOpts, GIT_PUSH_OPTIONS_VERSION);
-        applyAuth(pushOpts.callbacks, auth);
-
-        auto headBranch = readHeadBranch(*repo);
-        const std::string localRef = headBranch.has_value()
-            ? ("refs/heads/" + *headBranch)
-            : std::string("HEAD");
-        const std::string pushSpec = "+" + localRef + ":" + localRef;
-        char* specStr = const_cast<char*>(pushSpec.c_str());
-        git_strarray pushRefs = {&specStr, 1};
-        checkGit(git_remote_push(remote.get(), &pushRefs, &pushOpts), "push", localRef);
-
-        PushResult result{};
-        result.pushed = true;
-        result.updated = true;
-        return result;
+        return pushHead(*repo, auth);
       });
 }
 
-// ----------------------------------------------------------------------------
-// status
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<StatusResult>> HybridGit::status(const std::string& localPath) {
   return Promise<StatusResult>::async([localPath](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
+    std::lock_guard<std::mutex> lock(mutexForPath(localPath));
     auto repo = openRepo(localPath);
     return buildStatus(*repo);
   });
 }
 
-// ----------------------------------------------------------------------------
-// isRepository
-// ----------------------------------------------------------------------------
 std::shared_ptr<Promise<bool>> HybridGit::isRepository(const std::string& localPath) {
   return Promise<bool>::async([localPath](const std::shared_ptr<PromiseRuntime>& /*rt*/) {
     git_repository* raw = nullptr;
@@ -678,7 +653,7 @@ std::shared_ptr<Promise<bool>> HybridGit::isRepository(const std::string& localP
     if (raw != nullptr) {
       git_repository_free(raw);
     }
-    return rc == 0 && raw != nullptr;
+    return rc == 0;
   });
 }
 

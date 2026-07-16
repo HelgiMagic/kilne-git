@@ -74,6 +74,7 @@ export default function AddRepoScreen() {
       return
     }
     setSaving(true)
+    let createdId: string | null = null
     try {
       const repo: Repo = await upsertRepo({
         name: form.name || deriveName(form.url),
@@ -85,12 +86,21 @@ export default function AddRepoScreen() {
         authorName: form.authorName.trim(),
         authorEmail: form.authorEmail.trim(),
       })
+      createdId = repo.id
       if (form.token.trim().length > 0) {
         await setRepoToken(repo.id, form.token.trim())
       }
       await cloneRepo(repo)
       router.back()
     } catch (e) {
+      // Don't leave a half-configured repo row after a failed first clone.
+      if (createdId != null) {
+        try {
+          await useStore.getState().removeRepo(createdId)
+        } catch {
+          // best-effort cleanup
+        }
+      }
       Alert.alert(
         'Clone failed',
         e instanceof Error ? e.message : String(e),

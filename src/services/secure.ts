@@ -28,18 +28,20 @@ export async function deleteToken(repoId: string): Promise<void> {
 }
 
 /**
- * List all repo IDs that have a token stored. Used to display "token set" badges
- * without exposing the value itself.
- *
- * expo-secure-store doesn't ship an enumeration API, so we rely on the well-known
- * prefix. This is cheap (reads the keystore only when accessed) and matches what
- * libraries like `expo-secure-store` themselves recommend for grouped keys.
+ * Probe which of the given repo IDs have a token stored.
+ * expo-secure-store has no enumeration API, so callers must supply known IDs.
  */
-export async function listTokenIds(): Promise<Set<string>> {
-  // SecureStore doesn't expose SecureStore's internal storage; we approximate by
-  // probing known IDs from outside. In practice the app always knows the repo IDs
-  // because they live in storage.ts, so this helper is mostly here for completeness.
-  throw new Error('listTokenIds is not supported by expo-secure-store — pass known IDs from loadRepos().')
+export async function listTokenIds(knownRepoIds: readonly string[]): Promise<Set<string>> {
+  const present = new Set<string>()
+  await Promise.all(
+    knownRepoIds.map(async (id) => {
+      const value = await loadToken(id)
+      if (value != null && value.length > 0) {
+        present.add(id)
+      }
+    }),
+  )
+  return present
 }
 
 export { SECURE_KEY_PREFIX }

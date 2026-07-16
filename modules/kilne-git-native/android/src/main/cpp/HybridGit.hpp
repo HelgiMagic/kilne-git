@@ -12,12 +12,12 @@ namespace margelo::nitro::kilne::git {
 /**
  * HybridObject that wraps libgit2.
  *
- * All public methods run on a libgit2 worker thread (Nitro schedules Promise
- * bodies on a background queue) — they never block the JS thread.
+ * All public methods run on a Nitro background queue — they never block the JS
+ * thread. Concurrent calls that touch the same `localPath` are serialized with
+ * a per-path mutex so libgit2 repository handles are not used concurrently.
  *
- * libgit2 is initialised lazily on first use and reference-counted via the
- * constructor / destructor pair. The native instance is a singleton cached
- * in JS (`getGit()` in `src/index.ts`).
+ * libgit2 is initialised once per process via `std::call_once`. The native
+ * instance is a singleton cached in JS (`getGit()` in `src/index.ts`).
  */
 class HybridGit : public HybridGitSpec {
 public:

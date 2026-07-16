@@ -12,9 +12,9 @@ interface Props {
 
 const SYNC_LABEL: Record<SyncState['kind'], string> = {
   idle: 'Ready',
-  pulling: 'Pullingâ€¦',
-  pushing: 'Pushingâ€¦',
-  cloning: 'Cloningâ€¦',
+  pulling: 'Pulling…',
+  pushing: 'Pushing…',
+  cloning: 'Cloning…',
   done: 'Synced',
   error: 'Sync error',
 }
@@ -37,13 +37,13 @@ export function RepoCard({ repo }: Props) {
         {repo.url}
       </ThemedText>
       <ThemedText type="small" numberOfLines={1}>
-        {repo.branch} Â· {shortPath(repo.localPath)}
+        {repo.branch} · {shortPath(repo.localPath)}
       </ThemedText>
 
       <View style={styles.meta}>
         <ThemedText type="small">
           {SYNC_LABEL[sync.kind]}
-          {sync.kind === 'done' || sync.kind === 'error' ? ` Â· ${formatRelative(sync.at)}` : ''}
+          {sync.kind === 'done' || sync.kind === 'error' ? ` · ${formatRelative(sync.at)}` : ''}
         </ThemedText>
       </View>
 
@@ -73,7 +73,7 @@ function shortPath(path: string): string {
   if (segments.length <= 3) {
     return path
   }
-  return 'â€¦/' + segments.slice(-2).join('/')
+  return '…/' + segments.slice(-2).join('/')
 }
 
 function formatRelative(iso: string): string {

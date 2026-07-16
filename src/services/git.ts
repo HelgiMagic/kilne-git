@@ -85,24 +85,39 @@ export async function clone(repo: Repo): Promise<void> {
   await git().clone(repo.url, repo.localPath, await toCredentials(repo), cloneOptions(repo))
 }
 
-/** `git pull` on the configured upstream. */
+/**
+ * `git pull` on the configured upstream (falls back to origin/<head>).
+ * Throws when the merge leaves unresolved conflicts.
+ */
 export async function pull(repo: Repo): Promise<void> {
-  await git().pull(repo.localPath, await toCredentials(repo), options(repo))
+  const result = await git().pull(repo.localPath, await toCredentials(repo), options(repo))
+  if (result.conflicted.length > 0) {
+    throw new Error(
+      `Merge conflicts in ${result.conflicted.length} file(s): ${result.conflicted.slice(0, 5).join(', ')}`,
+    )
+  }
 }
 
-/** Stage everything + commit + push. */
+/** Stage everything + commit + push. Throws if the push fails. */
 export async function commitAllAndPush(repo: Repo, message: string): Promise<void> {
-  await git().commitAllAndPush(
+  const result = await git().commitAllAndPush(
     repo.localPath,
     message,
     await toCredentials(repo),
     commitOptions(repo),
   )
+  if (!result.push.pushed) {
+    const sha = result.commit.sha != null ? ` (commit ${result.commit.sha.slice(0, 7)})` : ''
+    throw new Error(`Push failed${sha}`)
+  }
 }
 
 /** `git push HEAD` without staging/committing. */
 export async function push(repo: Repo): Promise<void> {
-  await git().push(repo.localPath, await toCredentials(repo), options(repo))
+  const result = await git().push(repo.localPath, await toCredentials(repo), options(repo))
+  if (!result.pushed) {
+    throw new Error('Push failed')
+  }
 }
 
 /** Full status of the repo. */

@@ -164,7 +164,7 @@ export interface Git extends HybridObject<{ ios: 'c++', android: 'c++' }> {
 
   /**
    * Initialise an empty repository at `localPath`. Creates `.git` and the working tree.
-   * Resolves with the absolute path. Rejects if the directory already contains a repo.
+   * Resolves with the absolute working-tree path. Rejects if the directory already contains a repo.
    */
   init(localPath: string): Promise<string>
 
@@ -191,9 +191,10 @@ export interface Git extends HybridObject<{ ios: 'c++', android: 'c++' }> {
 
   /**
    * Stage all changes (including untracked files, minus .gitignored), commit them
-   * with `message` and push HEAD to its upstream.
+   * with `message` and push HEAD to its upstream (non-force).
    *
    * If there is nothing to stage, no commit is created (but push still runs).
+   * Push failures reject the promise.
    */
   commitAllAndPush(
     localPath: string,
