@@ -10,9 +10,10 @@ include(FetchContent)
 # Pin every dependency so builds are reproducible. Sources are fetched once and
 # cached under build/_deps; subsequent configures are instant.
 #
-# NOTE: URL_HASH lines are intentionally omitted so that pinning can be verified
-# manually after the first successful build (the hashes get printed in the
-# configure log). Add them back once you've confirmed a known-good download.
+# Prefer GIT_REPOSITORY over GitHub Releases/archive tarball URLs: the redirect
+# host release-assets.githubusercontent.com often times out (curl 28) even when
+# github.com itself is reachable. Git clones go to github.com and work reliably.
+# zlib stays on zlib.net (no GitHub CDN involved).
 # ----------------------------------------------------------------------------
 
 # ---- zlib -------------------------------------------------------------------
@@ -28,6 +29,7 @@ FetchContent_Declare(
         http-parser
         GIT_REPOSITORY https://github.com/nodejs/http-parser.git
         GIT_TAG        v2.9.4
+        GIT_SHALLOW    TRUE
 )
 FetchContent_GetProperties(http-parser)
 if(NOT http-parser_POPULATED)
@@ -37,9 +39,12 @@ if(NOT http-parser_POPULATED)
 endif()
 
 # ---- mbedTLS (TLS for HTTPS) ------------------------------------------------
+# v3.6+ needs the `framework` git submodule; FetchContent fetches it by default.
 FetchContent_Declare(
         mbedtls
-        URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.2/mbedtls-3.6.2.tar.bz2
+        GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+        GIT_TAG        v3.6.2
+        GIT_SHALLOW    TRUE
 )
 set(ENABLE_TESTING           OFF CACHE BOOL "" FORCE)
 set(ENABLE_PROGRAMS          OFF CACHE BOOL "" FORCE)
@@ -49,7 +54,9 @@ FetchContent_MakeAvailable(mbedtls)
 # ---- libgit2 ----------------------------------------------------------------
 FetchContent_Declare(
         libgit2
-        URL https://github.com/libgit2/libgit2/archive/refs/tags/v1.9.0.tar.gz
+        GIT_REPOSITORY https://github.com/libgit2/libgit2.git
+        GIT_TAG        v1.9.0
+        GIT_SHALLOW    TRUE
 )
 set(BUILD_SHARED_LIBS       OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTS             OFF CACHE BOOL "" FORCE)

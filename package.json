@@ -46,7 +46,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "nitrogen": "cd modules/kilne-git-native && npx nitrogen",
-    "prebuild:clean": "pnpm nitrogen && expo prebuild --clean --platform android"
+    "prebuild:clean": "rm -rf modules/kilne-git-native/android/.cxx modules/kilne-git-native/android/build && pnpm nitrogen && expo prebuild --clean --platform android"
   },
   "private": true
 }
