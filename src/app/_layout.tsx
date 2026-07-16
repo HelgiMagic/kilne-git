@@ -41,11 +41,14 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
+  const colorScheme = useColorScheme()
+  const background = (colorScheme === 'dark' ? Colors.dark : Colors.light).background
+
   return (
     <Stack
       screenOptions={{
         headerShadowVisible: false,
-        contentStyle: { paddingHorizontal: Spacing.three },
+        contentStyle: { paddingHorizontal: Spacing.three, backgroundColor: background },
       }}
     >
       <Stack.Screen name="index" options={{ title: 'Repositories' }} />

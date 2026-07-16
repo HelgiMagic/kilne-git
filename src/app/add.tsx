@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, Switch, Alert } from 'react-native'
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  TextInput,
+  View,
+} from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -112,112 +121,120 @@ export default function AddRepoScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <Field label="Clone URL" hint="HTTPS URL, e.g. https://github.com/you/vault.git">
-        <TextInput
-          style={styles.input}
-          value={form.url}
-          onChangeText={onUrlChange}
-          placeholder="https://github.com/you/vault.git"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-        />
-      </Field>
+      <ScrollView
+        contentContainerStyle={{
+          paddingVertical: Spacing.three,
+          paddingBottom: insets.bottom + Spacing.five,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Field label="Clone URL" hint="HTTPS URL, e.g. https://github.com/you/vault.git">
+          <TextInput
+            style={styles.input}
+            value={form.url}
+            onChangeText={onUrlChange}
+            placeholder="https://github.com/you/vault.git"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+          />
+        </Field>
 
-      <Field label="Display name" hint="Shown in the repo list.">
-        <TextInput
-          style={styles.input}
-          value={form.name}
-          onChangeText={(v) => set('name', v)}
-          placeholder="vault"
-        />
-      </Field>
+        <Field label="Display name" hint="Shown in the repo list.">
+          <TextInput
+            style={styles.input}
+            value={form.name}
+            onChangeText={(v) => set('name', v)}
+            placeholder="vault"
+          />
+        </Field>
 
-      <Field label="Branch" hint="Defaults to main.">
-        <TextInput
-          style={styles.input}
-          value={form.branch}
-          onChangeText={(v) => set('branch', v)}
-          placeholder="main"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
+        <Field label="Branch" hint="Defaults to main.">
+          <TextInput
+            style={styles.input}
+            value={form.branch}
+            onChangeText={(v) => set('branch', v)}
+            placeholder="main"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </Field>
 
-      <Field label="Local path" hint="Where to clone on device. Obsidian must be able to read this folder.">
-        <TextInput
-          style={styles.input}
-          value={form.localPath}
-          onChangeText={(v) => set('localPath', v)}
-          placeholder={defaultLocalPath('vault')}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
+        <Field label="Local path" hint="Where to clone on device. Obsidian must be able to read this folder.">
+          <TextInput
+            style={styles.input}
+            value={form.localPath}
+            onChangeText={(v) => set('localPath', v)}
+            placeholder={defaultLocalPath('vault')}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </Field>
 
-      <Field label="Personal access token" hint="GitHub: Settings → Developer settings → Personal access tokens. Select 'repo' scope.">
-        <TextInput
-          style={styles.input}
-          value={form.token}
-          onChangeText={(v) => set('token', v)}
-          placeholder="ghp_xxxxxxxxxxxx"
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-      </Field>
+        <Field label="Personal access token" hint="GitHub: Settings → Developer settings → Personal access tokens. Select 'repo' scope.">
+          <TextInput
+            style={styles.input}
+            value={form.token}
+            onChangeText={(v) => set('token', v)}
+            placeholder="ghp_xxxxxxxxxxxx"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+          />
+        </Field>
 
-      <Field label="Username" hint="For GitHub tokens, anything works — defaults to x-access-token.">
-        <TextInput
-          style={styles.input}
-          value={form.username}
-          onChangeText={(v) => set('username', v)}
-          placeholder="x-access-token"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </Field>
+        <Field label="Username" hint="For GitHub tokens, anything works — defaults to x-access-token.">
+          <TextInput
+            style={styles.input}
+            value={form.username}
+            onChangeText={(v) => set('username', v)}
+            placeholder="x-access-token"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </Field>
 
-      <Field label="Author name">
-        <TextInput
-          style={styles.input}
-          value={form.authorName}
-          onChangeText={(v) => set('authorName', v)}
-          placeholder="kilne-git"
-        />
-      </Field>
+        <Field label="Author name">
+          <TextInput
+            style={styles.input}
+            value={form.authorName}
+            onChangeText={(v) => set('authorName', v)}
+            placeholder="kilne-git"
+          />
+        </Field>
 
-      <Field label="Author email">
-        <TextInput
-          style={styles.input}
-          value={form.authorEmail}
-          onChangeText={(v) => set('authorEmail', v)}
-          placeholder="kilne-git@localhost"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-        />
-      </Field>
+        <Field label="Author email">
+          <TextInput
+            style={styles.input}
+            value={form.authorEmail}
+            onChangeText={(v) => set('authorEmail', v)}
+            placeholder="kilne-git@localhost"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+          />
+        </Field>
 
-      <Field label="Insecure TLS" hint="Skip certificate verification — only for self-hosted servers.">
-        <Switch value={form.insecure} onValueChange={(v) => set('insecure', v)} />
-      </Field>
+        <Field label="Insecure TLS" hint="Skip certificate verification — only for self-hosted servers.">
+          <Switch value={form.insecure} onValueChange={(v) => set('insecure', v)} />
+        </Field>
 
-      <View style={[styles.actions, { paddingBottom: insets.bottom + Spacing.two }]}>
-        <Pressable style={styles.primaryBtn} onPress={onSave} disabled={saving}>
-          {saving ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <ThemedText style={styles.primaryBtnText}>Clone & save</ThemedText>
-          )}
-        </Pressable>
-      </View>
+        <View style={styles.actions}>
+          <Pressable style={styles.primaryBtn} onPress={onSave} disabled={saving}>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <ThemedText style={styles.primaryBtnText}>Clone & save</ThemedText>
+            )}
+          </Pressable>
+        </View>
+      </ScrollView>
     </ThemedView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingVertical: Spacing.three },
+  container: { flex: 1 },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
