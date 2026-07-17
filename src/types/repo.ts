@@ -11,7 +11,6 @@ export interface Repo {
   branch: string
   localPath: string
   username: string
-  insecure: boolean
   authorName: string
   authorEmail: string
   lastSyncedAt: string | null

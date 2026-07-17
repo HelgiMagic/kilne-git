@@ -5,6 +5,9 @@
 #include "GitRaii.hpp"
 #include "GitRepoOps.hpp"
 
+#include <chrono>
+#include <cstdio>
+#include <ctime>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -18,6 +21,35 @@ namespace margelo::nitro::kilne::git {
 namespace {
 
 std::once_flag g_libgit2InitOnce;
+
+/** Same shape as JS `defaultCommitMessage()` — always includes UTC time. */
+std::string autoSyncCommitMessage() {
+  using clock = std::chrono::system_clock;
+  const auto now = clock::now();
+  const auto secs = clock::to_time_t(now);
+  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      now.time_since_epoch())
+                      .count() %
+                  1000;
+  std::tm tmUtc{};
+#if defined(_WIN32)
+  gmtime_s(&tmUtc, &secs);
+#else
+  gmtime_r(&secs, &tmUtc);
+#endif
+  char buf[64];
+  std::snprintf(buf,
+                sizeof(buf),
+                "auto: sync from android @ %04d-%02d-%02dT%02d:%02d:%02d.%03lldZ",
+                tmUtc.tm_year + 1900,
+                tmUtc.tm_mon + 1,
+                tmUtc.tm_mday,
+                tmUtc.tm_hour,
+                tmUtc.tm_min,
+                tmUtc.tm_sec,
+                static_cast<long long>(ms < 0 ? 0 : ms));
+  return std::string(buf);
+}
 
 /** Serialize all libgit2 work on a given repository path. */
 std::mutex& mutexForPath(const std::string& path) {
@@ -82,9 +114,7 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
           cloneOpts.checkout_branch = branchOwned.c_str();
         }
 
-        const bool insecure =
-            options.has_value() && options->insecure.value_or(false);
-        AuthPayload auth = toPayload(credentials, insecure);
+        AuthPayload auth = toPayload(credentials);
         applyAuth(cloneOpts.fetch_opts.callbacks, auth);
 
         git_repository* raw = nullptr;
@@ -106,13 +136,12 @@ std::shared_ptr<Promise<CloneResult>> HybridGit::clone(
 
 std::shared_ptr<Promise<PullResult>> HybridGit::pull(
     const std::string& localPath,
-    const std::optional<GitCredentials>& credentials,
-    const std::optional<InsecureOptions>& options) {
+    const std::optional<GitCredentials>& credentials) {
   return Promise<PullResult>::async(
-      [localPath, credentials, options]() {
+      [localPath, credentials]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
-        AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
+        AuthPayload auth = toPayload(credentials);
 
         PullResult result{};
         result.fastForwarded = false;
@@ -129,7 +158,8 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
           result.merged = true;
         } else {
           // Commit local edits first so merge/FF checkout cannot be blocked.
-          commitDirtyChanges(*repo, "auto: local changes before pull");
+          const std::string message = autoSyncCommitMessage();
+          commitDirtyChanges(*repo, message.c_str());
         }
 
         AnnotatedCommitOwner upstreamCommit = fetchUpstream(*repo, auth);
@@ -215,7 +245,7 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
     const std::string& localPath,
     const std::string& message,
     const std::optional<GitCredentials>& credentials,
-    const std::optional<CommitAndInsecureOptions>& options) {
+    const std::optional<CommitOptions>& options) {
   return Promise<CommitAndPushResult>::async(
       [localPath, message, credentials, options]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
@@ -227,8 +257,7 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
         commitResult.sha = stageResult.sha;
         commitResult.filesChanged = static_cast<double>(stageResult.filesChanged);
 
-        AuthPayload auth =
-            toPayload(credentials, options.has_value() && options->insecure.value_or(false));
+        AuthPayload auth = toPayload(credentials);
         PushResult pushResult = pushHead(*repo, auth);
 
         CommitAndPushResult combined{};
@@ -240,13 +269,12 @@ std::shared_ptr<Promise<CommitAndPushResult>> HybridGit::commitAllAndPush(
 
 std::shared_ptr<Promise<PushResult>> HybridGit::push(
     const std::string& localPath,
-    const std::optional<GitCredentials>& credentials,
-    const std::optional<InsecureOptions>& options) {
+    const std::optional<GitCredentials>& credentials) {
   return Promise<PushResult>::async(
-      [localPath, credentials, options]() {
+      [localPath, credentials]() {
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
-        AuthPayload auth = toPayload(credentials, options.has_value() && options->insecure.value_or(false));
+        AuthPayload auth = toPayload(credentials);
         return pushHead(*repo, auth);
       });
 }

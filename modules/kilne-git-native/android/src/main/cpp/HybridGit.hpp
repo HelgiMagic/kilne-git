@@ -40,19 +40,17 @@ public:
 
   std::shared_ptr<Promise<PullResult>> pull(
       const std::string& localPath,
-      const std::optional<GitCredentials>& credentials,
-      const std::optional<InsecureOptions>& options) override;
+      const std::optional<GitCredentials>& credentials) override;
 
   std::shared_ptr<Promise<CommitAndPushResult>> commitAllAndPush(
       const std::string& localPath,
       const std::string& message,
       const std::optional<GitCredentials>& credentials,
-      const std::optional<CommitAndInsecureOptions>& options) override;
+      const std::optional<CommitOptions>& options) override;
 
   std::shared_ptr<Promise<PushResult>> push(
       const std::string& localPath,
-      const std::optional<GitCredentials>& credentials,
-      const std::optional<InsecureOptions>& options) override;
+      const std::optional<GitCredentials>& credentials) override;
 
   std::shared_ptr<Promise<StatusResult>> status(const std::string& localPath) override;
 

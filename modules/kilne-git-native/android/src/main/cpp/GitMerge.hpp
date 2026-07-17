@@ -18,7 +18,7 @@ struct StageAndCommitResult {
 std::string oidToHex(const git_oid* oid);
 
 SignatureOwner makeAuthorSignature(git_repository& repo,
-                                   const std::optional<CommitAndInsecureOptions>& options);
+                                   const std::optional<CommitOptions>& options);
 SignatureOwner defaultSignature(git_repository& repo);
 
 /**
@@ -32,7 +32,7 @@ StageAndCommitResult stageAllAndCommit(git_repository& repo,
 
 StageAndCommitResult stageAllAndCommit(git_repository& repo,
                                        const char* message,
-                                       const std::optional<CommitAndInsecureOptions>& options,
+                                       const std::optional<CommitOptions>& options,
                                        const char* commitOperation = "commit-create");
 
 /** Stage + commit local dirty changes so merge/FF checkout is not blocked. */

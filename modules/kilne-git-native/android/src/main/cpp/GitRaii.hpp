@@ -53,13 +53,12 @@ inline StatusListOwner takeStatus(git_status_list* p) { return StatusListOwner(p
 inline ConfigOwner takeConfig(git_config* p)       { return ConfigOwner(p, GitPtrDeleters::config); }
 
 /**
- * Payload passed into libgit2's `credentials` and `certificate_check` callbacks.
+ * Payload passed into libgit2's `credentials` callback.
  * Lives on the stack of the calling operation.
  */
 struct AuthPayload {
   std::string username;
   std::string password;
-  bool insecure{false};
   /** Counts credential attempts so we can bail out after a few failures. */
   int attempts{0};
 };

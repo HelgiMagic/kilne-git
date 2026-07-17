@@ -21,12 +21,10 @@ namespace margelo::nitro::kilne::git { struct GitCredentials; }
 namespace margelo::nitro::kilne::git { struct CloneOptions; }
 // Forward declaration of `PullResult` to properly resolve imports.
 namespace margelo::nitro::kilne::git { struct PullResult; }
-// Forward declaration of `InsecureOptions` to properly resolve imports.
-namespace margelo::nitro::kilne::git { struct InsecureOptions; }
 // Forward declaration of `CommitAndPushResult` to properly resolve imports.
 namespace margelo::nitro::kilne::git { struct CommitAndPushResult; }
-// Forward declaration of `CommitAndInsecureOptions` to properly resolve imports.
-namespace margelo::nitro::kilne::git { struct CommitAndInsecureOptions; }
+// Forward declaration of `CommitOptions` to properly resolve imports.
+namespace margelo::nitro::kilne::git { struct CommitOptions; }
 // Forward declaration of `PushResult` to properly resolve imports.
 namespace margelo::nitro::kilne::git { struct PushResult; }
 // Forward declaration of `StatusResult` to properly resolve imports.
@@ -39,9 +37,8 @@ namespace margelo::nitro::kilne::git { struct StatusResult; }
 #include <optional>
 #include "CloneOptions.hpp"
 #include "PullResult.hpp"
-#include "InsecureOptions.hpp"
 #include "CommitAndPushResult.hpp"
-#include "CommitAndInsecureOptions.hpp"
+#include "CommitOptions.hpp"
 #include "PushResult.hpp"
 #include "StatusResult.hpp"
 
@@ -77,9 +74,9 @@ namespace margelo::nitro::kilne::git {
     public:
       // Methods
       virtual std::shared_ptr<Promise<CloneResult>> clone(const std::string& url, const std::string& localPath, const std::optional<GitCredentials>& credentials, const std::optional<CloneOptions>& options) = 0;
-      virtual std::shared_ptr<Promise<PullResult>> pull(const std::string& localPath, const std::optional<GitCredentials>& credentials, const std::optional<InsecureOptions>& options) = 0;
-      virtual std::shared_ptr<Promise<CommitAndPushResult>> commitAllAndPush(const std::string& localPath, const std::string& message, const std::optional<GitCredentials>& credentials, const std::optional<CommitAndInsecureOptions>& options) = 0;
-      virtual std::shared_ptr<Promise<PushResult>> push(const std::string& localPath, const std::optional<GitCredentials>& credentials, const std::optional<InsecureOptions>& options) = 0;
+      virtual std::shared_ptr<Promise<PullResult>> pull(const std::string& localPath, const std::optional<GitCredentials>& credentials) = 0;
+      virtual std::shared_ptr<Promise<CommitAndPushResult>> commitAllAndPush(const std::string& localPath, const std::string& message, const std::optional<GitCredentials>& credentials, const std::optional<CommitOptions>& options) = 0;
+      virtual std::shared_ptr<Promise<PushResult>> push(const std::string& localPath, const std::optional<GitCredentials>& credentials) = 0;
       virtual std::shared_ptr<Promise<StatusResult>> status(const std::string& localPath) = 0;
       virtual std::shared_ptr<Promise<bool>> isRepository(const std::string& localPath) = 0;
 

@@ -41,9 +41,8 @@ const char* deltaPath(const git_diff_delta* delta) noexcept {
 
 }  // namespace
 
-AuthPayload toPayload(const std::optional<GitCredentials>& creds, bool insecure) {
+AuthPayload toPayload(const std::optional<GitCredentials>& creds) {
   AuthPayload p;
-  p.insecure = insecure;
   if (creds.has_value()) {
     p.username = creds->username;
     p.password = creds->password;

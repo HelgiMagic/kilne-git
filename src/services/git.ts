@@ -31,13 +31,8 @@ async function toCredentials(repo: Repo): Promise<GitCredentials | undefined> {
   return { username: repo.username, password: token }
 }
 
-function options(repo: Repo) {
-  return { insecure: repo.insecure }
-}
-
 function commitOptions(repo: Repo) {
   return {
-    insecure: repo.insecure,
     authorName: repo.authorName || undefined,
     authorEmail: repo.authorEmail || undefined,
   }
@@ -47,7 +42,6 @@ function cloneOptions(repo: Repo) {
   const branch = repo.branch.trim()
   return {
     branch: branch.length > 0 ? branch : undefined,
-    insecure: repo.insecure,
   }
 }
 
@@ -111,7 +105,7 @@ export async function clone(repo: Repo): Promise<CloneResult> {
 }
 
 export async function pull(repo: Repo): Promise<PullResult> {
-  const result = await git().pull(nativePath(repo), await toCredentials(repo), options(repo))
+  const result = await git().pull(nativePath(repo), await toCredentials(repo))
   if (result.conflicted.length > 0) {
     throw new Error(
       `Merge conflicts in ${result.conflicted.length} file(s): ${result.conflicted.slice(0, 5).join(', ')}`,
@@ -141,7 +135,7 @@ export async function commitAllAndPush(repo: Repo, message: string): Promise<{
 }
 
 export async function push(repo: Repo): Promise<void> {
-  const result = await git().push(nativePath(repo), await toCredentials(repo), options(repo))
+  const result = await git().push(nativePath(repo), await toCredentials(repo))
   if (!result.pushed) throw new Error('Push failed')
 }
 

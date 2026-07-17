@@ -10,24 +10,15 @@ export interface GitCredentials {
   password: string
 }
 
-/** Per-call flags shared by pull / push. */
-export interface InsecureOptions {
-  /** Disable TLS certificate verification (self-signed / self-hosted). */
-  insecure?: boolean
-}
-
 /** Author identity for commits. Committer uses the same identity. */
 export interface CommitOptions {
   authorName?: string
   authorEmail?: string
 }
 
-export interface CommitAndInsecureOptions extends CommitOptions, InsecureOptions {}
-
 export interface CloneOptions {
   /** Branch to check out after clone. If omitted, uses the remote HEAD. */
   branch?: string
-  insecure?: boolean
 }
 
 /**
@@ -117,7 +108,6 @@ export interface Git extends HybridObject<{ android: 'c++' }> {
   pull(
     localPath: string,
     credentials?: GitCredentials,
-    options?: InsecureOptions,
   ): Promise<PullResult>
 
   /**
@@ -129,14 +119,13 @@ export interface Git extends HybridObject<{ android: 'c++' }> {
     localPath: string,
     message: string,
     credentials?: GitCredentials,
-    options?: CommitAndInsecureOptions,
+    options?: CommitOptions,
   ): Promise<CommitAndPushResult>
 
   /** Push HEAD to its upstream without creating a commit. */
   push(
     localPath: string,
     credentials?: GitCredentials,
-    options?: InsecureOptions,
   ): Promise<PushResult>
 
   status(localPath: string): Promise<StatusResult>

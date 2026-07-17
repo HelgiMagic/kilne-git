@@ -10,7 +10,7 @@
 
 namespace margelo::nitro::kilne::git {
 
-AuthPayload toPayload(const std::optional<GitCredentials>& creds, bool insecure);
+AuthPayload toPayload(const std::optional<GitCredentials>& creds);
 
 RepositoryOwner openRepo(const std::string& path);
 

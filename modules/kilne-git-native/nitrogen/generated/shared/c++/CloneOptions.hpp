@@ -41,11 +41,10 @@ namespace margelo::nitro::kilne::git {
   struct CloneOptions final {
   public:
     std::optional<std::string> branch     SWIFT_PRIVATE;
-    std::optional<bool> insecure     SWIFT_PRIVATE;
 
   public:
     CloneOptions() = default;
-    explicit CloneOptions(std::optional<std::string> branch, std::optional<bool> insecure): branch(branch), insecure(insecure) {}
+    explicit CloneOptions(std::optional<std::string> branch): branch(branch) {}
 
   public:
     friend bool operator==(const CloneOptions& lhs, const CloneOptions& rhs) = default;
@@ -61,14 +60,12 @@ namespace margelo::nitro {
     static inline margelo::nitro::kilne::git::CloneOptions fromJSI(jsi::Runtime& runtime, const jsi::Value& arg) {
       jsi::Object obj = arg.asObject(runtime);
       return margelo::nitro::kilne::git::CloneOptions(
-        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "branch"))),
-        JSIConverter<std::optional<bool>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "insecure")))
+        JSIConverter<std::optional<std::string>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "branch")))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::kilne::git::CloneOptions& arg) {
       jsi::Object obj(runtime);
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "branch"), JSIConverter<std::optional<std::string>>::toJSI(runtime, arg.branch));
-      obj.setProperty(runtime, PropNameIDCache::get(runtime, "insecure"), JSIConverter<std::optional<bool>>::toJSI(runtime, arg.insecure));
       return obj;
     }
     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
@@ -80,7 +77,6 @@ namespace margelo::nitro {
         return false;
       }
       if (!JSIConverter<std::optional<std::string>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "branch")))) return false;
-      if (!JSIConverter<std::optional<bool>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "insecure")))) return false;
       return true;
     }
   };

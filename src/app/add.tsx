@@ -5,7 +5,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   TextInput,
   View,
 } from 'react-native'
@@ -34,7 +33,6 @@ interface FormState {
   localPath: string
   username: string
   token: string
-  insecure: boolean
   authorName: string
   authorEmail: string
 }
@@ -66,7 +64,6 @@ export default function AddRepoScreen() {
     localPath: '',
     username: 'x-access-token',
     token: '',
-    insecure: false,
     authorName: 'kilne-git',
     authorEmail: 'kilne-git@localhost',
   })
@@ -123,7 +120,6 @@ export default function AddRepoScreen() {
         branch: form.branch.trim(),
         localPath: absolutePath,
         username: form.username.trim() || 'x-access-token',
-        insecure: form.insecure,
         authorName: form.authorName.trim(),
         authorEmail: form.authorEmail.trim(),
       })
@@ -253,10 +249,6 @@ export default function AddRepoScreen() {
             autoCorrect={false}
             keyboardType="email-address"
           />
-        </Field>
-
-        <Field label="Insecure TLS" hint="Skip certificate verification — only for self-hosted servers.">
-          <Switch value={form.insecure} onValueChange={(v) => set('insecure', v)} />
         </Field>
 
         <View style={styles.actions}>

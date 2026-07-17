@@ -45,27 +45,11 @@ int credentialsCallback(git_credential** out,
   return git_credential_userpass_plaintext_new(out, user, data->password.c_str());
 }
 
-/**
- * When `insecure` is set we unconditionally accept any TLS certificate. This is
- * needed for self-hosted GitLab/Gitea with a self-signed cert.
- *
- * Returning 1 = accept the certificate.
- */
-int certCheckCallback(git_cert* /*cert*/, int /*valid*/, const char* /*host*/, void* payload) noexcept {
-  auto* data = static_cast<AuthPayload*>(payload);
-  if (data != nullptr && data->insecure) {
-    return 1;  // accept
-  }
-  // libgit2 will reject automatically if valid == 0
-  return 0;
-}
-
 }  // namespace
 
 void applyAuth(git_remote_callbacks& cb, AuthPayload& payload) {
   git_remote_init_callbacks(&cb, GIT_REMOTE_CALLBACKS_VERSION);
   cb.credentials = &credentialsCallback;
-  cb.certificate_check = &certCheckCallback;
   cb.payload = &payload;
 }
 

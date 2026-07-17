@@ -197,7 +197,7 @@ void stageEverything(git_repository& repo, git_index& index, bool requireCleanUn
 StageAndCommitResult stageAllAndCommitImpl(
     git_repository& repo,
     const char* message,
-    const std::optional<CommitAndInsecureOptions>* options,
+    const std::optional<CommitOptions>* options,
     const char* commitOperation,
     bool requireCleanUntracked) {
   git_index* rawIndex = nullptr;
@@ -278,7 +278,7 @@ std::string oidToHex(const git_oid* oid) {
 }
 
 SignatureOwner makeAuthorSignature(git_repository& repo,
-                                   const std::optional<CommitAndInsecureOptions>& options) {
+                                   const std::optional<CommitOptions>& options) {
   std::string authorName = "kilne-git";
   std::string authorEmail = "kilne-git@localhost";
   if (options.has_value()) {
@@ -316,7 +316,7 @@ StageAndCommitResult stageAllAndCommit(git_repository& repo,
 
 StageAndCommitResult stageAllAndCommit(git_repository& repo,
                                        const char* message,
-                                       const std::optional<CommitAndInsecureOptions>& options,
+                                       const std::optional<CommitOptions>& options,
                                        const char* commitOperation) {
   return stageAllAndCommitImpl(repo, message, &options, commitOperation, true);
 }

@@ -28,7 +28,6 @@ function withId(input: NewRepo): Repo {
     branch: input.branch,
     localPath: input.localPath,
     username: input.username,
-    insecure: input.insecure,
     authorName: input.authorName,
     authorEmail: input.authorEmail,
     lastSyncedAt: null,
