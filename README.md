@@ -1,125 +1,55 @@
 # kilne-git
 
-A minimal native Obsidian-vault git sync client for Android, built with Expo + Nitro Modules + libgit2.
-
-The whole point: native C++ git via libgit2 (not isomorphic-git) so it's as fast on Android as on a desktop. Manual sync — open the app, tap **Pull**, edit in Obsidian Mobile, tap **Push**.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│  TypeScript UI (Expo Router)                     │
-│   src/app/…           screens                    │
-│   src/components/…    RepoCard, Field, …         │
-│   src/services/…      git, sync, storage, secure │
-│   src/store.ts        zustand (repos + sync)     │
-└──────────────────┬──────────────────────────────┘
-                   │ JS calls (via JSI)
-┌──────────────────▼──────────────────────────────┐
-│  kilne-git-native (Nitro Module, C++20)          │
-│   android/…/cpp/HybridGit.cpp  libgit2 wrapper   │
-│   src/Git.nitro.ts             HybridObject spec │
-└──────────────────┬──────────────────────────────┘
-                   │ C calls
-┌──────────────────▼──────────────────────────────┐
-│  libgit2 1.9.0 + mbedTLS 3.6.2 + zlib + parser  │
-│  (built from source via CMake FetchContent)      │
-└─────────────────────────────────────────────────┘
-```
-
-Files worth reading first:
-
-- `modules/kilne-git-native/src/Git.nitro.ts` — the contract between JS and native.
-- `modules/kilne-git-native/android/src/main/cpp/HybridGit.cpp` — libgit2 calls.
-- `modules/kilne-git-native/android/src/main/cpp/CMakeLists.txt` — how deps are wired.
-- `src/app/repo/[id].tsx` — the Pull / Commit & Push / Status screen.
-- `src/services/git.ts` — high-level wrapper used by the UI.
-- `src/services/sync.ts` — sync orchestration + zustand progress state.
+Native Obsidian-vault git sync for Android (Expo + Nitro Modules + libgit2). Manual Pull / Push — no background sync, no cloud.
 
 ## Build
 
-### Prerequisites
-
-- Node.js LTS + pnpm
-- Android Studio with NDK (side-by-side) ≥ 27 and CMake ≥ 3.22.1
-- A working `JAVA_HOME` (JDK 17+)
-
-### One-time setup
-
 ```bash
+# Requirements:
+#   - Node.js LTS + pnpm
+#   - Android Studio with NDK (side-by-side) ≥ 27 and CMake ≥ 3.22.1
+#   - JAVA_HOME → JDK 17+
+
 pnpm install
-pnpm nitrogen        # generates C++/Kotlin specs from Git.nitro.ts
+pnpm prebuild:clean          # macOS / Linux
+# pnpm prebuild:clean:win    # Windows
+pnpm android:release
 ```
 
-### Generate the native Android project
+APK: `android/app/build/outputs/apk/release/`. First build fetches native deps via CMake (~100 MB), then caches them. Expo Go will not work — this needs a custom native build.
+
+Dev / install on a device:
 
 ```bash
-pnpm exec expo prebuild --platform android
+pnpm android
 ```
 
-This produces an `android/` folder at the repo root with the Nitro module autolinked.
-
-### Build & run on a device / emulator
-
-```bash
-pnpm exec expo run:android --device
-```
-
-The first build will download libgit2, mbedTLS, zlib and http-parser sources via CMake `FetchContent` (≈100 MB). Cached afterwards.
-
-> Expo Go cannot run this app — Nitro Modules require a custom dev build. `expo run:android` produces one automatically.
-
-### Regenerating specs after editing `Git.nitro.ts`
-
-Any change to the TypeScript spec must be followed by:
-
-```bash
-pnpm nitrogen
-```
-
-The generated files live in `modules/kilne-git-native/nitrogen/generated/`. They're checked in so reviewers can see the diff.
+After changing `modules/kilne-git-native/src/Git.nitro.ts`, run `pnpm nitrogen`.
 
 ## Usage
 
-1. **Add repository**: tap `+ Add` on the home screen.
-   - Clone URL (HTTPS, e.g. `https://github.com/you/vault.git`)
-   - Personal access token (GitHub: `Settings → Developer settings → Personal access tokens → fine-grained`, scope `Contents: Read and write`)
-   - Local path: defaults to `Documents/<name>` on shared phone storage (Obsidian can open it). You can type a short path like `Documents/my-vault` — no need for `/storage/emulated/0/…`.
-   - On Android 11+, the app will ask you to enable **All files access** for kilne-git so it can write outside its private folder.
-2. **Sync**: open the repo detail screen.
-   - **Pull** — fetch + merge upstream.
-   - **Push only** — push HEAD without committing (detail screen).
-   - **Commit all & push** — stage everything (creates, edits, deletes, renames), commit, push.
-   - Status panel shows branch, upstream, ahead/behind, staged/working/untracked/conflicted files.
+1. **Add repo** (`+ Add`): HTTPS clone URL, PAT (`Contents: Read and write`), local path (e.g. `Documents/my-vault`). On Android 11+ grant **All files access**.
+2. **Sync** (repo screen): **Pull**, **Push only**, or **Commit all & push**. Status shows branch, ahead/behind, and dirty files.
 
-## Caveats / known limitations
+## Limitations
 
-This is an MVP — intentional scope cuts:
+- HTTPS + PAT only (no SSH / OAuth)
+- No background sync
+- Conflicts are shown; resolve them elsewhere (e.g. on a PC)
 
-- **HTTPS + PAT only**. SSH and OAuth are not wired (libgit2 is built with `USE_SSH=OFF`).
-- **No background sync**. Everything is triggered manually. If you want auto-sync-on-Obsidian-open, that needs a separate foreground service + accessibility / usage-stats plumbing — see `docs/` (TBD).
-- **Merge conflicts**: the UI shows conflicted paths but resolution must happen elsewhere (PC).
-- **Auth callback retries**: capped at 4 attempts to avoid loops. Wrong token → fast fail.
-- **No shallow clone by default**; pass `depth` in `CloneOptions` to enable.
-- **No `.gitignore` editor** in the UI; edit it via Obsidian or another file manager.
-- **CMake hashes are not pinned** in `CMakeLists.txt` for the third-party tarballs. After your first successful build, copy the SHA-256 from the configure log into a `URL_HASH` line to lock it down.
+## Security
 
-## Security / privacy
+On-device only — no telemetry. Tokens in `expo-secure-store` (Keystore). Repo config (URL / branch / path, not the token) is a local JSON file.
 
-- **No telemetry, no analytics, no cloud.** Everything happens on-device.
-- Tokens live in `expo-secure-store` (Android Keystore, hardware-backed when available).
-- Repo configs (URL, branch, path — **not** the token) live in a JSON file in the app's document directory.
-- The native library is built from upstream libgit2 sources — you can `git diff` the pinned tarballs against `github.com/libgit2/libgit2` releases.
+## Layout
 
-## Verifying the build
-
-```bash
-pnpm exec tsc --noEmit   # type-check the TS / TSX
-pnpm lint                # ESLint (if configured)
 ```
-
-C++ side: there's no static-analysis CI yet. The libgit2 calls follow the official docs at <https://libgit2.org/libgit2/HEAD/>.
+src/                     UI, services, zustand store
+modules/kilne-git-native/
+  src/Git.nitro.ts       JS ↔ native contract
+  android/.../HybridGit.cpp   libgit2 wrapper
+```
 
 ## License
 
-TBD — pick one before publishing. (The bundled dependencies are all permissive: libgit2 GPL-2.0 with linking exception, mbedTLS Apache-2.0, zlib zlib, http-parser MIT.)
+TBD. Bundled deps: libgit2 (GPL-2.0 + linking exception), mbedTLS (Apache-2.0), zlib, http-parser (MIT).
