@@ -103,7 +103,7 @@ export interface Git extends HybridObject<{ android: 'c++' }> {
   /**
    * Fetch + merge into HEAD (`git pull`). Fast-forward when possible,
    * otherwise union-merge. May auto-commit dirty local changes first and
-   * push after a merge commit.
+   * always pushes when HEAD is ahead of upstream after integrate.
    */
   pull(
     localPath: string,

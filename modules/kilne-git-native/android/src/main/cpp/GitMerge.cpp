@@ -52,9 +52,10 @@ void stageAddAll(git_index& index) {
 /**
  * Stage whatever status still reports as dirty. Covers cases where add_all's
  * workdir diff missed a path that status (or a later readdir) can see.
+ * @return status snapshot used for staging (caller may reuse it).
  */
-void stageFromStatus(git_repository& repo, git_index& index) {
-  const StatusResult st = buildStatus(repo);
+StatusResult stageFromStatus(git_repository& repo, git_index& index) {
+  const StatusResult st = buildStatusForStaging(repo);
   for (const auto& path : st.untracked) {
     if (path.empty() || path.back() == '/') {
       continue;  // directory placeholder — recurse via add_all / walk
@@ -71,6 +72,7 @@ void stageFromStatus(git_repository& repo, git_index& index) {
       checkGit(git_index_add_bypath(&index, entry.path.c_str()), "add-working", entry.path);
     }
   }
+  return st;
 }
 
 bool isDotGitDir(const char* name) noexcept {
@@ -146,7 +148,7 @@ void stageWorkdirFallback(git_repository& repo, git_index& index) {
 }
 
 std::vector<std::string> remainingUntracked(git_repository& repo) {
-  const StatusResult st = buildStatus(repo);
+  const StatusResult st = buildStatusForStaging(repo);
   std::vector<std::string> out;
   out.reserve(st.untracked.size());
   for (const auto& path : st.untracked) {
@@ -157,14 +159,33 @@ std::vector<std::string> remainingUntracked(git_repository& repo) {
   return out;
 }
 
+bool hasFileUntracked(const StatusResult& st) {
+  for (const auto& path : st.untracked) {
+    if (!path.empty() && path.back() != '/') {
+      return true;
+    }
+  }
+  return false;
+}
+
 void stageEverything(git_repository& repo, git_index& index, bool requireCleanUntracked) {
   // Reload index from disk in case another process touched it.
   checkGit(git_index_read(&index, 1), "index-read", "");
 
   stageAddAll(index);
-  stageFromStatus(repo, index);
-  stageWorkdirFallback(repo, index);
+  const StatusResult afterStatus = stageFromStatus(repo, index);
+  // Explicit Commit & push must always walk for FUSE-lagged new files.
+  // Pull auto-commit walks only when status still reports untracked paths.
+  const bool walked = requireCleanUntracked || hasFileUntracked(afterStatus);
+  if (walked) {
+    stageWorkdirFallback(repo, index);
+  }
   checkGit(git_index_write(&index), "index-write", "");
+
+  // Modified-only pull path: no untracked → no FUSE retry / extra status.
+  if (!walked) {
+    return;
+  }
 
   auto leftover = remainingUntracked(repo);
   if (leftover.empty()) {
@@ -322,6 +343,11 @@ StageAndCommitResult stageAllAndCommit(git_repository& repo,
 }
 
 bool commitDirtyChanges(git_repository& repo, const char* message) {
+  // Fast path: already clean — skip multi-pass staging / FUSE walk / sleep.
+  // Untracked files that status misses (FUSE lag) do not block SAFE checkout.
+  if (buildStatusForStaging(repo).isClean) {
+    return false;
+  }
   // Pull auto-commit: stage what we can; do not fail the pull on FUSE lag.
   auto result = stageAllAndCommitImpl(repo, message, nullptr, "commit-dirty", false);
   return result.sha.has_value();

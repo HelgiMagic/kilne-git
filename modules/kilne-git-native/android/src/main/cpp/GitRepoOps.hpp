@@ -25,7 +25,13 @@ std::string branchNameFromUpstream(const std::string& upstreamRef);
 
 AnnotatedCommitOwner fetchUpstream(git_repository& repo, const AuthPayload& auth);
 PushResult pushHead(git_repository& repo, const AuthPayload& auth);
+/** Full UI status: rename detection + ahead/behind. */
 StatusResult buildStatus(git_repository& repo);
+/**
+ * Fast status for staging / dirty checks: no rename detection, no ahead/behind.
+ * Same path lists as buildStatus for NEW/MODIFIED/DELETED/untracked.
+ */
+StatusResult buildStatusForStaging(git_repository& repo);
 size_t aheadOfUpstream(git_repository& repo, const git_oid& upstreamOid);
 
 }  // namespace margelo::nitro::kilne::git

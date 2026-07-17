@@ -233,8 +233,8 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
           result.merged = true;
         }
 
-        // After a merge, push so one Pull finishes the sync (resolve + publish).
-        if (result.merged && aheadOfUpstream(*repo, *upstreamOid) > 0) {
+        // Publish local commits (auto-commit and/or merge) in one Pull/Sync.
+        if (aheadOfUpstream(*repo, *upstreamOid) > 0) {
           pushHead(*repo, auth);
         }
         return result;

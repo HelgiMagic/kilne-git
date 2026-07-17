@@ -64,7 +64,7 @@ function pullDoneMessage(result: Awaited<ReturnType<typeof git.pull>>): string {
     const n = Math.max(1, Math.round(result.commitsFetched))
     return `Pulled ${n} commit${n === 1 ? '' : 's'} (fast-forward)`
   }
-  if (result.commitsFetched === 0) return 'Already up to date'
+  if (result.commitsFetched === 0) return 'Sync complete'
   return 'Pull complete'
 }
 
@@ -104,16 +104,18 @@ export async function commitAndPushRepo(repo: Repo, message: string): Promise<vo
   }
 }
 
-/** Forced pull (union-merge conflicts) then commit-all and push. */
-export async function syncRepo(repo: Repo, message: string): Promise<void> {
+/**
+ * Bidirectional sync via native pull: auto-commit dirty → fetch → FF/merge →
+ * push when ahead. Avoids a second full stage+push pass (previously pull then
+ * commitAllAndPush), which dominated wall time on large Obsidian vaults.
+ */
+export async function syncRepo(repo: Repo, _message?: string): Promise<void> {
   assertNotBusy(repo.id)
   await ensureRepoStorageAccess(repo)
   useStore.getState().setSync(repo.id, { kind: 'pulling' })
   try {
     const pullResult = await git.pull(repo)
-    useStore.getState().setSync(repo.id, { kind: 'pushing' })
-    const pushResult = await git.commitAllAndPush(repo, message)
-    setDone(repo.id, `${pullDoneMessage(pullResult)} · ${commitPushDoneMessage(pushResult)}`)
+    setDone(repo.id, pullDoneMessage(pullResult))
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)

@@ -39,6 +39,16 @@ const char* deltaPath(const git_diff_delta* delta) noexcept {
   return delta->old_file.path;
 }
 
+void setConfigBoolIfNeeded(git_config& cfg, const char* key, int desired) {
+  int current = 0;
+  if (git_config_get_bool(&current, &cfg, key) == 0 && current == desired) {
+    return;
+  }
+  git_config_set_bool(&cfg, key, desired);
+}
+
+StatusResult collectStatus(git_repository& repo, unsigned int flags, bool includeAheadBehind);
+
 }  // namespace
 
 AuthPayload toPayload(const std::optional<GitCredentials>& creds) {
@@ -58,10 +68,10 @@ void applyAndroidRepoConfig(git_repository& repo) {
   ConfigOwner cfg = takeConfig(rawCfg);
   // Directory mtimes often do not update when files are added; untracked cache
   // then permanently misses new notes/attachments in existing folders.
-  git_config_set_bool(cfg.get(), "core.untrackedCache", 0);
+  setConfigBoolIfNeeded(*cfg, "core.untrackedCache", 0);
   // FUSE reports 0777 for everything — avoid spurious mode-only "changes".
-  git_config_set_bool(cfg.get(), "core.filemode", 0);
-  git_config_set_bool(cfg.get(), "core.symlinks", 0);
+  setConfigBoolIfNeeded(*cfg, "core.filemode", 0);
+  setConfigBoolIfNeeded(*cfg, "core.symlinks", 0);
 }
 
 RepositoryOwner openRepo(const std::string& path) {
@@ -164,6 +174,8 @@ AnnotatedCommitOwner fetchUpstream(git_repository& repo, const AuthPayload& auth
   AuthPayload authCopy = auth;
   git_fetch_options fetchOpts;
   checkGit(git_fetch_options_init(&fetchOpts, GIT_FETCH_OPTIONS_VERSION), "fetch-init");
+  // Vault sync only needs the tracked branch tip — skip tag negotiation.
+  fetchOpts.download_tags = GIT_REMOTE_DOWNLOAD_TAGS_NONE;
   applyAuth(fetchOpts.callbacks, authCopy);
 
   const std::string refspecStr =
@@ -178,19 +190,17 @@ AnnotatedCommitOwner fetchUpstream(git_repository& repo, const AuthPayload& auth
   return takeAnnotated(rawAnnotated);
 }
 
-StatusResult buildStatus(git_repository& repo) {
+namespace {
+
+StatusResult collectStatus(git_repository& repo, unsigned int flags, bool includeAheadBehind) {
   git_status_options opts;
   git_status_options_init(&opts, GIT_STATUS_OPTIONS_VERSION);
   opts.show = GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
-  opts.flags =
-      GIT_STATUS_OPT_INCLUDE_UNTRACKED |
-      GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS |
-      GIT_STATUS_OPT_INCLUDE_UNREADABLE |
-      GIT_STATUS_OPT_INCLUDE_UNREADABLE_AS_UNTRACKED |
-      GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX |
-      GIT_STATUS_OPT_RENAMES_INDEX_TO_WORKDIR |
-      GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
-  opts.rename_threshold = 50;
+  opts.flags = flags;
+  if ((flags & (GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX | GIT_STATUS_OPT_RENAMES_INDEX_TO_WORKDIR)) !=
+      0) {
+    opts.rename_threshold = 50;
+  }
 
   git_status_list* rawList = nullptr;
   checkGit(git_status_list_new(&rawList, &repo, &opts), "status-list");
@@ -248,6 +258,10 @@ StatusResult buildStatus(git_repository& repo) {
     if (status != GIT_STATUS_CURRENT) result.isClean = false;
   }
 
+  if (!includeAheadBehind) {
+    return result;
+  }
+
   result.head = readHeadBranch(repo);
   auto upstream = resolveUpstream(repo);
   if (upstream.has_value()) {
@@ -267,6 +281,28 @@ StatusResult buildStatus(git_repository& repo) {
   }
 
   return result;
+}
+
+}  // namespace
+
+StatusResult buildStatus(git_repository& repo) {
+  return collectStatus(
+      repo,
+      GIT_STATUS_OPT_INCLUDE_UNTRACKED | GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS |
+          GIT_STATUS_OPT_INCLUDE_UNREADABLE | GIT_STATUS_OPT_INCLUDE_UNREADABLE_AS_UNTRACKED |
+          GIT_STATUS_OPT_RENAMES_HEAD_TO_INDEX | GIT_STATUS_OPT_RENAMES_INDEX_TO_WORKDIR |
+          GIT_STATUS_OPT_SORT_CASE_SENSITIVELY,
+      /*includeAheadBehind=*/true);
+}
+
+StatusResult buildStatusForStaging(git_repository& repo) {
+  // Rename detection is O(tree²)-ish and unused for add/remove staging.
+  return collectStatus(
+      repo,
+      GIT_STATUS_OPT_INCLUDE_UNTRACKED | GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS |
+          GIT_STATUS_OPT_INCLUDE_UNREADABLE | GIT_STATUS_OPT_INCLUDE_UNREADABLE_AS_UNTRACKED |
+          GIT_STATUS_OPT_SORT_CASE_SENSITIVELY,
+      /*includeAheadBehind=*/false);
 }
 
 PushResult pushHead(git_repository& repo, const AuthPayload& auth) {
