@@ -1,5 +1,5 @@
 /**
- * Sync orchestration: clone / pull / push / commit-and-push.
+ * Sync orchestration: clone / pull / push / commit-and-push / full sync.
  * Updates zustand sync state so the UI can show progress and outcomes.
  */
 
@@ -58,22 +58,31 @@ async function ensureRepoStorageAccess(repo: Repo): Promise<void> {
   }
 }
 
+function pullDoneMessage(result: Awaited<ReturnType<typeof git.pull>>): string {
+  if (result.merged) return 'Merged and pushed upstream changes'
+  if (result.fastForwarded) {
+    const n = Math.max(1, Math.round(result.commitsFetched))
+    return `Pulled ${n} commit${n === 1 ? '' : 's'} (fast-forward)`
+  }
+  if (result.commitsFetched === 0) return 'Already up to date'
+  return 'Pull complete'
+}
+
+function commitPushDoneMessage(result: Awaited<ReturnType<typeof git.commitAllAndPush>>): string {
+  if (result.sha != null && result.filesChanged > 0) {
+    const n = Math.round(result.filesChanged)
+    return `Committed ${n} file${n === 1 ? '' : 's'} (${result.sha.slice(0, 7)}) and pushed`
+  }
+  return 'Nothing new to commit — pushed current HEAD'
+}
+
 export async function pullRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
   await ensureRepoStorageAccess(repo)
   useStore.getState().setSync(repo.id, { kind: 'pulling' })
   try {
     const result = await git.pull(repo)
-    if (result.merged) {
-      setDone(repo.id, 'Merged and pushed upstream changes')
-    } else if (result.fastForwarded) {
-      const n = Math.max(1, Math.round(result.commitsFetched))
-      setDone(repo.id, `Pulled ${n} commit${n === 1 ? '' : 's'} (fast-forward)`)
-    } else if (result.commitsFetched === 0) {
-      setDone(repo.id, 'Already up to date')
-    } else {
-      setDone(repo.id, 'Pull complete')
-    }
+    setDone(repo.id, pullDoneMessage(result))
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)
@@ -87,15 +96,24 @@ export async function commitAndPushRepo(repo: Repo, message: string): Promise<vo
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
   try {
     const result = await git.commitAllAndPush(repo, message)
-    if (result.sha != null && result.filesChanged > 0) {
-      const n = Math.round(result.filesChanged)
-      setDone(
-        repo.id,
-        `Committed ${n} file${n === 1 ? '' : 's'} (${result.sha.slice(0, 7)}) and pushed`,
-      )
-    } else {
-      setDone(repo.id, 'Nothing new to commit — pushed current HEAD')
-    }
+    setDone(repo.id, commitPushDoneMessage(result))
+    await persistLastSynced(repo.id)
+  } catch (e) {
+    setError(repo.id, e)
+    throw e
+  }
+}
+
+/** Forced pull (union-merge conflicts) then commit-all and push. */
+export async function syncRepo(repo: Repo, message: string): Promise<void> {
+  assertNotBusy(repo.id)
+  await ensureRepoStorageAccess(repo)
+  useStore.getState().setSync(repo.id, { kind: 'pulling' })
+  try {
+    const pullResult = await git.pull(repo)
+    useStore.getState().setSync(repo.id, { kind: 'pushing' })
+    const pushResult = await git.commitAllAndPush(repo, message)
+    setDone(repo.id, `${pullDoneMessage(pullResult)} · ${commitPushDoneMessage(pushResult)}`)
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)

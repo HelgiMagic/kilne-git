@@ -4,7 +4,7 @@ import { ActionButton } from '@/components/ActionButton'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { Accent, Danger, Spacing, Success } from '@/constants/theme'
-import { commitAndPushRepo, pullRepo } from '@/services/sync'
+import { syncRepo } from '@/services/sync'
 import { displayLocalPath } from '@/services/storage'
 import { useStore } from '@/store'
 import { IDLE_SYNC, type Repo, type SyncState } from '@/types/repo'
@@ -29,17 +29,9 @@ export function RepoCard({ repo, onPress }: Props) {
   const busy = sync.kind === 'pulling' || sync.kind === 'pushing' || sync.kind === 'cloning'
   const isError = sync.kind === 'error'
 
-  async function onPull() {
+  async function onSync() {
     try {
-      await pullRepo(repo)
-    } catch {
-      // error already in store
-    }
-  }
-
-  async function onPush() {
-    try {
-      await commitAndPushRepo(repo, defaultCommitMessage())
+      await syncRepo(repo, defaultCommitMessage())
     } catch {
       // error already in store
     }
@@ -81,12 +73,11 @@ export function RepoCard({ repo, onPress }: Props) {
       </Pressable>
 
       <View style={styles.buttonRow}>
-        <ActionButton label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
         <ActionButton
-          label="Commit & push"
-          onPress={onPush}
+          label="Sync"
+          onPress={onSync}
           disabled={busy}
-          loading={sync.kind === 'pushing'}
+          loading={sync.kind === 'pulling' || sync.kind === 'pushing'}
         />
       </View>
     </ThemedView>
