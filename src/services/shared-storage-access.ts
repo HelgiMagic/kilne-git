@@ -2,21 +2,24 @@
  * Android shared-storage access for Obsidian-visible vault paths.
  *
  * Android 11+ requires the special “All files access” toggle
- * (`MANAGE_EXTERNAL_STORAGE`) — a normal runtime permission dialog is not enough.
+ * (`MANAGE_EXTERNAL_STORAGE`) — there is no runtime permission dialog.
+ * Without it, MediaProvider FUSE hides Obsidian-created files from `readdir`,
+ * so git never stages new notes/attachments while tracked edits still work.
  */
 
-import { Linking, PermissionsAndroid, Platform } from 'react-native'
+import { Alert, Linking, NativeModules, PermissionsAndroid, Platform } from 'react-native'
 import Constants from 'expo-constants'
-import { Directory } from 'expo-file-system'
 
 import {
   resolveLocalPath,
   SHARED_STORAGE_ACCESS_ERROR,
   sharedStorageRoot,
-  toFileUri,
 } from '@/services/storage'
 
-const PROBE_DIR_NAME = '.kilne-git-write-probe'
+type AllFilesAccessNative = {
+  isExternalStorageManager: () => Promise<boolean>
+  openSettings: () => Promise<void>
+}
 
 function androidApiLevel(): number {
   return typeof Platform.Version === 'number'
@@ -26,6 +29,18 @@ function androidApiLevel(): number {
 
 function appPackageName(): string {
   return Constants.expoConfig?.android?.package ?? 'com.kilne.git'
+}
+
+function nativeAllFiles(): AllFilesAccessNative | null {
+  const mod = NativeModules.KilneAllFilesAccess as AllFilesAccessNative | undefined
+  if (
+    mod != null &&
+    typeof mod.isExternalStorageManager === 'function' &&
+    typeof mod.openSettings === 'function'
+  ) {
+    return mod
+  }
+  return null
 }
 
 /** True when `path` resolves under shared phone storage (not app-private). */
@@ -65,9 +80,19 @@ export async function openAllFilesAccessSettings(): Promise<void> {
   if (Platform.OS !== 'android') {
     return
   }
+
+  const native = nativeAllFiles()
+  if (native != null) {
+    try {
+      await native.openSettings()
+      return
+    } catch {
+      // fall through to Linking fallbacks
+    }
+  }
+
   const pkg = appPackageName()
 
-  // Per-app All files access screen (data URI must be package:<name>).
   try {
     await Linking.openURL(
       `intent:#Intent;action=android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION;data=package:${pkg};end`,
@@ -97,13 +122,11 @@ export async function openAllFilesAccessSettings(): Promise<void> {
 }
 
 /**
- * Ensure we can write under shared storage (e.g. Documents/).
- * Returns false when the user still needs to grant All files access.
- *
- * On API 30+ there is no runtime dialog — callers should open Settings when this
- * returns false.
+ * True when the process has All Files Access (API 30+) or legacy storage grants.
+ * Uses `Environment.isExternalStorageManager()` — not a Documents write probe
+ * (write can succeed for app-owned paths while foreign files stay invisible).
  */
-export async function ensureSharedStorageWriteAccess(): Promise<boolean> {
+export async function hasAllFilesAccess(): Promise<boolean> {
   if (Platform.OS !== 'android') {
     return true
   }
@@ -119,30 +142,48 @@ export async function ensureSharedStorageWriteAccess(): Promise<boolean> {
     )
   }
 
-  return await probeSharedDocumentsWrite()
+  const native = nativeAllFiles()
+  if (native == null) {
+    // Native module missing (bad link) — refuse rather than false-positive.
+    return false
+  }
+  return await native.isExternalStorageManager()
 }
 
 /**
- * Probe write access on the existing Documents folder.
- * expo-file-system checks File.canWrite() on the *parent*, so this works once
- * All files access is granted — unlike Directory.create on a path that does not
- * exist yet.
+ * Ensure All Files Access for shared-storage vaults.
+ * Returns false when the user still needs to grant it in Settings.
  */
-async function probeSharedDocumentsWrite(): Promise<boolean> {
-  const documentsPath = `${sharedStorageRoot().replace(/\/+$/, '')}/Documents`
-  const documents = new Directory(toFileUri(documentsPath))
-  try {
-    if (!documents.exists) {
-      return false
-    }
-    const probe = documents.createDirectory(PROBE_DIR_NAME)
-    try {
-      probe.delete()
-    } catch {
-      // best-effort cleanup
-    }
-    return true
-  } catch {
-    return false
+export async function ensureSharedStorageWriteAccess(): Promise<boolean> {
+  return await hasAllFilesAccess()
+}
+
+/**
+ * Throw if `path` is under shared storage and All Files Access is missing.
+ * Call before clone / status / commit / pull / push.
+ */
+export async function requireSharedStorageAccess(pathOrUri: string): Promise<void> {
+  if (!isUnderSharedStorage(pathOrUri)) {
+    return
   }
+  if (!(await hasAllFilesAccess())) {
+    throw new Error(SHARED_STORAGE_ACCESS_ERROR)
+  }
+}
+
+/** Alert + open the All files access Settings screen. */
+export function promptSharedStorageAccess(onOpened?: () => void): void {
+  Alert.alert(
+    'All files access needed',
+    'kilne-git must see files created by Obsidian (new notes and photos). Android has no normal permission popup — enable “All files access” (or “Allow access to manage all files”) for kilne-git, then try again.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Open settings',
+        onPress: () => {
+          void openAllFilesAccessSettings().then(() => onOpened?.())
+        },
+      },
+    ],
+  )
 }

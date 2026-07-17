@@ -18,6 +18,11 @@ import { ThemedView } from '@/components/themed-view'
 import { Accent, Danger, Spacing, Success } from '@/constants/theme'
 import * as git from '@/services/git'
 import { commitAndPushRepo, pullRepo, pushRepo } from '@/services/sync'
+import {
+  isSharedStorageAccessError,
+  promptSharedStorageAccess,
+  requireSharedStorageAccess,
+} from '@/services/shared-storage-access'
 import { displayLocalPath } from '@/services/storage'
 import { useStore } from '@/store'
 import { IDLE_SYNC } from '@/types/repo'
@@ -39,7 +44,7 @@ export default function RepoDetailScreen() {
 
   useEffect(() => {
     if (repo == null) return
-    refreshStatus().catch(() => {})
+    refreshStatus({ promptIfDenied: false }).catch(() => {})
   }, [repo?.id])
 
   if (repo == null) {
@@ -55,13 +60,17 @@ export default function RepoDetailScreen() {
 
   const busy = sync.kind === 'pulling' || sync.kind === 'pushing' || sync.kind === 'cloning'
 
-  async function refreshStatus() {
+  async function refreshStatus(options?: { promptIfDenied?: boolean }) {
     if (!repo) return
     setStatusLoading(true)
     try {
+      await requireSharedStorageAccess(repo.localPath)
       setStatus(await git.status(repo))
-    } catch {
+    } catch (e) {
       setStatus(null)
+      if (options?.promptIfDenied !== false && isSharedStorageAccessError(e)) {
+        promptSharedStorageAccess()
+      }
     } finally {
       setStatusLoading(false)
     }
@@ -170,13 +179,13 @@ export default function RepoDetailScreen() {
         <ActivityIndicator style={{ marginTop: Spacing.two }} />
       ) : status == null ? (
         <ThemedText type="small" style={{ marginTop: Spacing.two }}>
-          Not a repository yet — clone first.
+          Status unavailable. If this vault is on phone storage, enable All files access, then Refresh.
         </ThemedText>
       ) : (
         <StatusView status={status} />
       )}
 
-      <Pressable onPress={refreshStatus} style={styles.link}>
+      <Pressable onPress={() => void refreshStatus({ promptIfDenied: true })} style={styles.link}>
         <ThemedText style={{ color: Accent }}>Refresh status</ThemedText>
       </Pressable>
 

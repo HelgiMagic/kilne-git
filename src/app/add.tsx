@@ -24,7 +24,7 @@ import {
   ensureSharedStorageWriteAccess,
   isSharedStorageAccessError,
   isUnderSharedStorage,
-  openAllFilesAccessSettings,
+  promptSharedStorageAccess,
 } from '@/services/shared-storage-access'
 
 interface FormState {
@@ -96,22 +96,6 @@ export default function AddRepoScreen() {
     }
   }
 
-  function promptSharedStorageAccess() {
-    Alert.alert(
-      'Storage access needed',
-      'Android will not show a normal permission popup for this. Open settings, enable “All files access” (or “Allow access to manage all files”) for kilne-git, then tap Clone again.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Open settings',
-          onPress: () => {
-            void openAllFilesAccessSettings()
-          },
-        },
-      ],
-    )
-  }
-
   async function onSave() {
     const name = form.name.trim() || deriveName(form.url)
     const localPathInput = form.localPath.trim() || defaultLocalPath(name)
@@ -159,7 +143,7 @@ export default function AddRepoScreen() {
         }
       }
       if (isSharedStorageAccessError(e)) {
-        promptSharedStorageAccess()
+        // ensureRepoStorageAccess / pre-check already showed the Settings alert
       } else {
         Alert.alert(
           'Clone failed',
@@ -215,7 +199,7 @@ export default function AddRepoScreen() {
 
         <Field
           label="Local path"
-          hint="Under phone storage — e.g. Documents/my-vault. On Android 11+ enable All files access in system settings (no popup). Obsidian can open this folder."
+          hint="Under phone storage — e.g. Documents/my-vault. On Android 11+ the app will ask you to enable All files access in Settings (required so new Obsidian files are visible to git)."
         >
           <TextInput
             style={styles.input}

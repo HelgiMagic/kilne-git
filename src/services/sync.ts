@@ -5,6 +5,11 @@
 
 import { useStore } from '@/store'
 import * as git from '@/services/git'
+import {
+  isSharedStorageAccessError,
+  promptSharedStorageAccess,
+  requireSharedStorageAccess,
+} from '@/services/shared-storage-access'
 import { saveRepos } from '@/services/storage'
 import { type Repo } from '@/types/repo'
 
@@ -41,8 +46,21 @@ async function persistLastSynced(repoId: string) {
   await saveRepos(updated)
 }
 
+async function ensureRepoStorageAccess(repo: Repo): Promise<void> {
+  try {
+    await requireSharedStorageAccess(repo.localPath)
+  } catch (e) {
+    if (isSharedStorageAccessError(e)) {
+      promptSharedStorageAccess()
+    }
+    setError(repo.id, e)
+    throw e
+  }
+}
+
 export async function pullRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
+  await ensureRepoStorageAccess(repo)
   useStore.getState().setSync(repo.id, { kind: 'pulling' })
   try {
     const result = await git.pull(repo)
@@ -65,6 +83,7 @@ export async function pullRepo(repo: Repo): Promise<void> {
 
 export async function commitAndPushRepo(repo: Repo, message: string): Promise<void> {
   assertNotBusy(repo.id)
+  await ensureRepoStorageAccess(repo)
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
   try {
     const result = await git.commitAllAndPush(repo, message)
@@ -86,6 +105,7 @@ export async function commitAndPushRepo(repo: Repo, message: string): Promise<vo
 
 export async function pushRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
+  await ensureRepoStorageAccess(repo)
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
   try {
     await git.push(repo)
@@ -99,6 +119,7 @@ export async function pushRepo(repo: Repo): Promise<void> {
 
 export async function cloneRepo(repo: Repo): Promise<void> {
   assertNotBusy(repo.id)
+  await ensureRepoStorageAccess(repo)
   useStore.getState().setSync(repo.id, { kind: 'cloning' })
   try {
     const result = await git.clone(repo)

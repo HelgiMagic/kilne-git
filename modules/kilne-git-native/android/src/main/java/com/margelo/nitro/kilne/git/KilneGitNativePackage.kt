@@ -3,12 +3,13 @@ package com.margelo.nitro.kilne.git
 import com.facebook.react.BaseReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.module.model.ReactModuleInfo
 import com.facebook.react.module.model.ReactModuleInfoProvider
 
 /**
- * Autolinked React Package whose only job is to load `libKilneGitNative.so`
- * (via [KilneGitNativeOnLoad.initializeNative]) so JNI_OnLoad registers the
- * `Git` HybridObject before JS calls `NitroModules.createHybridObject('Git')`.
+ * Autolinked React Package:
+ * - Loads `libKilneGitNative.so` so JNI_OnLoad registers the `Git` HybridObject.
+ * - Registers [AllFilesAccessModule] for `Environment.isExternalStorageManager()`.
  */
 class KilneGitNativePackage : BaseReactPackage() {
   companion object {
@@ -20,8 +21,25 @@ class KilneGitNativePackage : BaseReactPackage() {
   override fun getModule(
     name: String,
     reactContext: ReactApplicationContext,
-  ): NativeModule? = null
+  ): NativeModule? =
+    if (name == AllFilesAccessModule.NAME) {
+      AllFilesAccessModule(reactContext)
+    } else {
+      null
+    }
 
   override fun getReactModuleInfoProvider(): ReactModuleInfoProvider =
-    ReactModuleInfoProvider { emptyMap() }
+    ReactModuleInfoProvider {
+      mapOf(
+        AllFilesAccessModule.NAME to
+          ReactModuleInfo(
+            AllFilesAccessModule.NAME,
+            AllFilesAccessModule::class.java.name,
+            false, // canOverrideExistingModule
+            false, // needsEagerInit
+            false, // isCxxModule
+            false, // isTurboModule — classic NativeModule via interop
+          ),
+      )
+    }
 }
