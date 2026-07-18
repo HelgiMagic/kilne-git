@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { RepoCard } from '@/components/RepoCard'
-import { BorderWidth, Radii, Spacing } from '@/constants/theme'
+import { Accent, AccentInk, BorderWidth, Radii, Spacing } from '@/constants/theme'
 import { useTheme } from '@/hooks/use-theme'
 import { useStore } from '@/store'
 
@@ -76,15 +76,15 @@ export default function RepoListScreen() {
             styles.addBtn,
             {
               bottom: insets.bottom + Spacing.three,
-              borderColor: theme.border,
-              backgroundColor: theme.backgroundElement,
+              borderColor: Accent,
+              backgroundColor: Accent,
             },
           ])}
         >
-          <ThemedText type="label" themeColor="text">
+          <ThemedText type="label" style={{ color: AccentInk }}>
             +
           </ThemedText>
-          <ThemedText type="label" themeColor="textSecondary">
+          <ThemedText type="label" style={{ color: AccentInk }}>
             add
           </ThemedText>
         </Pressable>
