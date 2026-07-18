@@ -16,6 +16,13 @@
 
 #include <git2.h>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define KILNE_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "kilne-git", __VA_ARGS__)
+#else
+#define KILNE_LOGI(...) ((void)0)
+#endif
+
 namespace margelo::nitro::kilne::git {
 
 namespace {
@@ -139,6 +146,13 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
     const std::optional<GitCredentials>& credentials) {
   return Promise<PullResult>::async(
       [localPath, credentials]() {
+        using clock = std::chrono::steady_clock;
+        const auto tPull = clock::now();
+        auto msSince = [](clock::time_point start) {
+          return std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - start)
+              .count();
+        };
+
         std::lock_guard<std::mutex> lock(mutexForPath(localPath));
         auto repo = openRepo(localPath);
         AuthPayload auth = toPayload(credentials);
@@ -150,19 +164,24 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
         result.conflicted = {};
 
         // Finish an interrupted merge (e.g. previous pull left conflicts on disk).
+        auto tPhase = clock::now();
         if (git_repository_state(repo.get()) == GIT_REPOSITORY_STATE_MERGE) {
           git_index* rawIndex = nullptr;
           checkGit(git_repository_index(&rawIndex, repo.get()), "merge-index", "");
           IndexOwner index = takeIndex(rawIndex);
           commitMergeFromIndex(*repo, *index);
           result.merged = true;
+          KILNE_LOGI("pull: finish-merge=%lldms", msSince(tPhase));
         } else {
           // Commit local edits first so merge/FF checkout cannot be blocked.
           const std::string message = autoSyncCommitMessage();
           commitDirtyChanges(*repo, message.c_str());
+          KILNE_LOGI("pull: local-commit=%lldms", msSince(tPhase));
         }
 
+        tPhase = clock::now();
         AnnotatedCommitOwner upstreamCommit = fetchUpstream(*repo, auth);
+        KILNE_LOGI("pull: fetch=%lldms", msSince(tPhase));
 
         git_oid localOid{};
         checkGit(git_reference_name_to_id(&localOid, repo.get(), "HEAD"), "resolve-head", "HEAD");
@@ -174,6 +193,7 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
                  "ahead-behind", "");
         result.commitsFetched = static_cast<double>(behind);
 
+        tPhase = clock::now();
         if (behind == 0) {
           // Recover vaults stuck by the old FF order (HEAD moved, files did not).
           if (healStaleWorktreeIfIndexMatchesAncestor(*repo, localOid)) {
@@ -232,11 +252,19 @@ std::shared_ptr<Promise<PullResult>> HybridGit::pull(
           commitMergeFromIndex(*repo, *index);
           result.merged = true;
         }
+        KILNE_LOGI("pull: integrate ahead=%zu behind=%zu ff=%d merge=%d (%lldms)",
+                   ahead, behind, result.fastForwarded ? 1 : 0, result.merged ? 1 : 0,
+                   msSince(tPhase));
 
         // Publish local commits (auto-commit and/or merge) in one Pull/Sync.
+        tPhase = clock::now();
         if (aheadOfUpstream(*repo, *upstreamOid) > 0) {
           pushHead(*repo, auth);
+          KILNE_LOGI("pull: push=%lldms", msSince(tPhase));
+        } else {
+          KILNE_LOGI("pull: push=skipped");
         }
+        KILNE_LOGI("pull: total=%lldms", msSince(tPull));
         return result;
       });
 }

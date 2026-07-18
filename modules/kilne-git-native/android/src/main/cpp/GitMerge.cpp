@@ -15,9 +15,23 @@
 
 #include <git2.h>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#define KILNE_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "kilne-git", __VA_ARGS__)
+#else
+#define KILNE_LOGI(...) ((void)0)
+#endif
+
 namespace margelo::nitro::kilne::git {
 
 namespace {
+
+using SteadyClock = std::chrono::steady_clock;
+
+long long elapsedMs(SteadyClock::time_point start) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(SteadyClock::now() - start)
+      .count();
+}
 
 void writeWorkdirFile(git_repository& repo, const char* relPath, const void* data, size_t len) {
   const char* workdir = git_repository_workdir(&repo);
@@ -42,23 +56,14 @@ int collectMergeHead(const git_oid* oid, void* payload) {
   return 0;
 }
 
-/** Emulate `git add -A`: update tracked paths (incl. deletes) then add untracked. */
-void stageAddAll(git_index& index) {
-  git_strarray paths = {nullptr, 0};
-  checkGit(git_index_update_all(&index, &paths, nullptr, nullptr), "update-all", "");
-  checkGit(git_index_add_all(&index, &paths, 0, nullptr, nullptr), "add-all", "");
-}
-
 /**
- * Stage whatever status still reports as dirty. Covers cases where add_all's
- * workdir diff missed a path that status (or a later readdir) can see.
- * @return status snapshot used for staging (caller may reuse it).
+ * Stage dirty paths from an existing status snapshot.
+ * Avoids a second full-tree status / empty-pathspec update_all+add_all.
  */
-StatusResult stageFromStatus(git_repository& repo, git_index& index) {
-  const StatusResult st = buildStatusForStaging(repo);
+void applyStatusToIndex(git_index& index, const StatusResult& st) {
   for (const auto& path : st.untracked) {
     if (path.empty() || path.back() == '/') {
-      continue;  // directory placeholder — recurse via add_all / walk
+      continue;  // directory placeholder — recurse via walk
     }
     checkGit(git_index_add_bypath(&index, path.c_str()), "add-untracked", path);
   }
@@ -72,6 +77,11 @@ StatusResult stageFromStatus(git_repository& repo, git_index& index) {
       checkGit(git_index_add_bypath(&index, entry.path.c_str()), "add-working", entry.path);
     }
   }
+}
+
+StatusResult stageFromStatus(git_repository& repo, git_index& index) {
+  const StatusResult st = buildStatusForStaging(repo);
+  applyStatusToIndex(index, st);
   return st;
 }
 
@@ -168,39 +178,67 @@ bool hasFileUntracked(const StatusResult& st) {
   return false;
 }
 
-void stageEverything(git_repository& repo, git_index& index, bool requireCleanUntracked) {
+/**
+ * Stage working-tree changes into the index.
+ *
+ * Fast path (common Sync: a few modified notes, no new files):
+ *   apply the known status via bypath only — no full-index update_all/add_all,
+ *   no second status, no workdir walk, no FUSE sleep.
+ *
+ * Slow path (untracked present, or explicit Commit & push):
+ *   apply status, then POSIX walk for FUSE-lagged creates; optional retry.
+ *
+ * @param knownStatus when non-null, skip the initial status scan (caller already ran it).
+ */
+void stageEverything(git_repository& repo, git_index& index, bool requireCleanUntracked,
+                     const StatusResult* knownStatus) {
+  const auto t0 = SteadyClock::now();
   // Reload index from disk in case another process touched it.
   checkGit(git_index_read(&index, 1), "index-read", "");
 
-  stageAddAll(index);
-  const StatusResult afterStatus = stageFromStatus(repo, index);
-  // Explicit Commit & push must always walk for FUSE-lagged new files.
-  // Pull auto-commit walks only when status still reports untracked paths.
-  const bool walked = requireCleanUntracked || hasFileUntracked(afterStatus);
-  if (walked) {
-    stageWorkdirFallback(repo, index);
-  }
-  checkGit(git_index_write(&index), "index-write", "");
+  StatusResult st =
+      knownStatus != nullptr ? *knownStatus : buildStatusForStaging(repo);
+  const long long statusMs =
+      knownStatus != nullptr ? 0 : elapsedMs(t0);
 
-  // Modified-only pull path: no untracked → no FUSE retry / extra status.
-  if (!walked) {
+  if (st.isClean && !requireCleanUntracked) {
+    KILNE_LOGI("stage: clean (status=%lldms)", statusMs);
     return;
   }
 
+  applyStatusToIndex(index, st);
+
+  // Pull auto-commit: modified/deleted only → done. Commit & push always walks
+  // so FUSE-lagged new notes are not silently left behind.
+  const bool needUntrackedSweep = requireCleanUntracked || hasFileUntracked(st);
+  if (!needUntrackedSweep) {
+    checkGit(git_index_write(&index), "index-write", "");
+    KILNE_LOGI("stage: modified-only paths=%zu (status=%lldms total=%lldms)",
+               st.working.size() + st.staged.size(), statusMs, elapsedMs(t0));
+    return;
+  }
+
+  const auto tWalk = SteadyClock::now();
+  stageWorkdirFallback(repo, index);
+  checkGit(git_index_write(&index), "index-write", "");
+  KILNE_LOGI("stage: walk (status=%lldms walk=%lldms)", statusMs, elapsedMs(tWalk));
+
   auto leftover = remainingUntracked(repo);
   if (leftover.empty()) {
+    KILNE_LOGI("stage: done after walk total=%lldms", elapsedMs(t0));
     return;
   }
 
   // Obsidian / FUSE can flush new files slightly after the note edit that
   // references them. Brief pause + second pass catches attachments & new notes.
   std::this_thread::sleep_for(std::chrono::milliseconds(400));
-  stageAddAll(index);
-  stageFromStatus(repo, index);
+  const StatusResult retryStatus = stageFromStatus(repo, index);
   stageWorkdirFallback(repo, index);
   checkGit(git_index_write(&index), "index-write-retry", "");
+  (void)retryStatus;
 
   if (!requireCleanUntracked) {
+    KILNE_LOGI("stage: soft retry total=%lldms", elapsedMs(t0));
     return;
   }
 
@@ -213,6 +251,7 @@ void stageEverything(git_repository& repo, git_index& index, bool requireCleanUn
                          leftover.front();
     throw GitError("Stage", detail);
   }
+  KILNE_LOGI("stage: strict retry ok total=%lldms", elapsedMs(t0));
 }
 
 StageAndCommitResult stageAllAndCommitImpl(
@@ -220,12 +259,13 @@ StageAndCommitResult stageAllAndCommitImpl(
     const char* message,
     const std::optional<CommitOptions>* options,
     const char* commitOperation,
-    bool requireCleanUntracked) {
+    bool requireCleanUntracked,
+    const StatusResult* knownStatus) {
   git_index* rawIndex = nullptr;
   checkGit(git_repository_index(&rawIndex, &repo), "index", "");
   IndexOwner index = takeIndex(rawIndex);
 
-  stageEverything(repo, *index, requireCleanUntracked);
+  stageEverything(repo, *index, requireCleanUntracked, knownStatus);
 
   // HEAD points at a commit OID — resolve to its tree for the diff.
   git_oid headCommitOid{};
@@ -332,24 +372,33 @@ StageAndCommitResult stageAllAndCommit(git_repository& repo,
                                        const char* message,
                                        const char* commitOperation) {
   // Explicit Commit & push must not silently leave new files behind.
-  return stageAllAndCommitImpl(repo, message, nullptr, commitOperation, true);
+  return stageAllAndCommitImpl(repo, message, nullptr, commitOperation, true, nullptr);
 }
 
 StageAndCommitResult stageAllAndCommit(git_repository& repo,
                                        const char* message,
                                        const std::optional<CommitOptions>& options,
                                        const char* commitOperation) {
-  return stageAllAndCommitImpl(repo, message, &options, commitOperation, true);
+  return stageAllAndCommitImpl(repo, message, &options, commitOperation, true, nullptr);
 }
 
 bool commitDirtyChanges(git_repository& repo, const char* message) {
-  // Fast path: already clean — skip multi-pass staging / FUSE walk / sleep.
+  using clock = std::chrono::steady_clock;
+  const auto t0 = clock::now();
+  auto ms = [](clock::time_point start) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - start).count();
+  };
+  // One status for both the clean check and staging — avoids a second full scan.
   // Untracked files that status misses (FUSE lag) do not block SAFE checkout.
-  if (buildStatusForStaging(repo).isClean) {
+  const StatusResult st = buildStatusForStaging(repo);
+  KILNE_LOGI("commitDirty: status=%lldms clean=%d", ms(t0), st.isClean ? 1 : 0);
+  if (st.isClean) {
     return false;
   }
   // Pull auto-commit: stage what we can; do not fail the pull on FUSE lag.
-  auto result = stageAllAndCommitImpl(repo, message, nullptr, "commit-dirty", false);
+  auto result = stageAllAndCommitImpl(repo, message, nullptr, "commit-dirty", false, &st);
+  KILNE_LOGI("commitDirty: total=%lldms committed=%d files=%zu",
+             ms(t0), result.sha.has_value() ? 1 : 0, result.filesChanged);
   return result.sha.has_value();
 }
 
