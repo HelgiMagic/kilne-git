@@ -1,19 +1,23 @@
 export const Colors = {
   light: {
-    text: '#0A0A0A',
-    background: '#F4F4F0',
+    text: '#111111',
+    background: '#FFFFFF',
     backgroundElement: '#FFFFFF',
-    backgroundSelected: '#E8E8E2',
-    textSecondary: '#5C5C56',
-    border: 'rgba(0,0,0,0.2)',
+    backgroundSelected: '#DEDED8',
+    textSecondary: '#111111',
+    textMuted: '#111111',
+    placeholder: '#9B9B9B',
+    border: '#C8C8C0',
   },
   dark: {
-    text: '#FFFFFF',
-    background: '#000000',
-    backgroundElement: '#0A0A0A',
-    backgroundSelected: '#141414',
-    textSecondary: '#8A8A8A',
-    border: 'rgba(255,255,255,0.2)',
+    text: '#F5F5F5',
+    background: '#111111',
+    backgroundElement: '#181818',
+    backgroundSelected: '#1F1F1F',
+    textSecondary: '#F5F5F5',
+    textMuted: '#F5F5F5',
+    placeholder: '#6B6B6B',
+    border: '#2A2A2A',
   },
 } as const
 
@@ -29,11 +33,11 @@ export const Spacing = {
   six: 64,
 } as const
 
-/** Neon lime — primary CTA fill (both themes). */
-export const Accent = '#C8FF00'
+/** Neon lime — primary CTA only. */
+export const Accent = '#D7FF00'
 
 /** Text / icons on lime fills. */
-export const AccentInk = '#0A0A0A'
+export const AccentInk = '#111111'
 
 export const Danger = '#FF3B4A'
 export const Success = '#3DDC84'

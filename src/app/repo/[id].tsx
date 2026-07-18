@@ -22,7 +22,6 @@ import {
   Danger,
   Radii,
   Spacing,
-  Success,
 } from '@/constants/theme'
 import { useTheme } from '@/hooks/use-theme'
 import * as git from '@/services/git'
@@ -62,7 +61,9 @@ export default function RepoDetailScreen() {
       <ThemedView style={styles.center}>
         <ThemedText>repository not found.</ThemedText>
         <Pressable onPress={() => router.replace('/')} style={styles.link}>
-          <ThemedText style={{ color: Accent }}>back to list</ThemedText>
+          <ThemedText type="label" themeColor="textSecondary">
+            back to list
+          </ThemedText>
         </Pressable>
       </ThemedView>
     )
@@ -146,8 +147,11 @@ export default function RepoDetailScreen() {
       showsVerticalScrollIndicator={false}
     >
       <ThemedText type="title">{repo.name}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary" style={{ marginBottom: Spacing.three }}>
-        {repo.url}
+      <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
+        {repo.url.replace(/^https?:\/\//, '').replace(/\.git$/, '')}
+      </ThemedText>
+      <ThemedText type="caption" themeColor="textMuted" style={{ marginBottom: Spacing.four, marginTop: Spacing.one }}>
+        {repo.branch || 'default'} · {displayLocalPath(repo.localPath)}
       </ThemedText>
 
       <SyncBanner kind={sync.kind} message={'message' in sync ? sync.message : ''} />
@@ -175,7 +179,7 @@ export default function RepoDetailScreen() {
           value={commitMessage}
           onChangeText={setCommitMessage}
           placeholder="auto: sync from android"
-          placeholderTextColor={theme.textSecondary}
+          placeholderTextColor={theme.placeholder}
           autoCapitalize="none"
           autoCorrect={false}
           multiline
@@ -187,16 +191,18 @@ export default function RepoDetailScreen() {
         onPress={onCommitAndPush}
         disabled={busy}
       >
-        <ThemedText style={styles.primaryBtnText}>commit all & push</ThemedText>
+        <ThemedText type="smallBold" style={styles.primaryBtnText}>
+          commit all & push
+        </ThemedText>
       </Pressable>
 
-      <View style={{ height: Spacing.four }} />
+      <View style={{ height: Spacing.five }} />
 
-      <ThemedText type="label" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="textMuted">
         status
       </ThemedText>
       {statusLoading ? (
-        <ActivityIndicator color={Accent} style={{ marginTop: Spacing.two }} />
+        <ActivityIndicator color={theme.textSecondary} style={{ marginTop: Spacing.three }} />
       ) : status == null ? (
         <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
           status unavailable. if this vault is on phone storage, enable all files access, then refresh.
@@ -206,15 +212,19 @@ export default function RepoDetailScreen() {
       )}
 
       <Pressable onPress={() => void refreshStatus({ promptIfDenied: true })} style={styles.link}>
-        <ThemedText style={{ color: Accent }}>refresh status</ThemedText>
+        <ThemedText type="label" themeColor="textSecondary">
+          refresh status
+        </ThemedText>
       </Pressable>
 
-      <View style={{ height: Spacing.four }} />
+      <View style={{ height: Spacing.five }} />
       <Pressable
         onPress={onRemove}
-        style={[styles.dangerBtn, { borderColor: Danger }]}
+        style={[styles.dangerBtn, { borderColor: theme.border }]}
       >
-        <ThemedText style={{ color: Danger, fontWeight: '600' }}>remove repository</ThemedText>
+        <ThemedText type="label" style={{ color: Danger }}>
+          remove repository
+        </ThemedText>
       </Pressable>
     </ScrollView>
   )
@@ -279,23 +289,26 @@ function StatusView({ status }: { status: StatusResult }) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
-      <ThemedText type="small" themeColor="textSecondary">
+      <ThemedText type="label" themeColor="textMuted" style={styles.rowLabel}>
         {label}
       </ThemedText>
-      <ThemedText type="small">{value}</ThemedText>
+      <ThemedText type="small" style={styles.rowValue} numberOfLines={1}>
+        {value}
+      </ThemedText>
     </View>
   )
 }
 
 function Section({ title }: { title: string }) {
   return (
-    <ThemedText type="label" themeColor="textSecondary" style={{ marginTop: Spacing.two, marginBottom: Spacing.one }}>
+    <ThemedText type="label" themeColor="textMuted" style={{ marginTop: Spacing.three, marginBottom: Spacing.one }}>
       {title}
     </ThemedText>
   )
 }
 
 function SyncBanner({ kind, message }: { kind: string; message: string }) {
+  const theme = useTheme()
   if (kind === 'idle' || kind === 'pulling' || kind === 'pushing' || kind === 'cloning') {
     return null
   }
@@ -304,57 +317,61 @@ function SyncBanner({ kind, message }: { kind: string; message: string }) {
     <View
       style={[
         styles.banner,
-        { borderColor: isError ? Danger : Success },
-        isError ? styles.bannerError : styles.bannerOk,
+        {
+          borderColor: isError ? Danger : theme.border,
+          backgroundColor: isError ? 'rgba(255,59,74,0.08)' : theme.backgroundSelected,
+        },
       ]}
     >
-      <ThemedText style={{ color: isError ? Danger : Success }}>{message}</ThemedText>
+      <ThemedText type="small" style={{ color: isError ? Danger : theme.textSecondary }}>
+        {message}
+      </ThemedText>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.three },
-  link: { marginTop: Spacing.two, alignSelf: 'flex-start', paddingVertical: Spacing.one },
-  buttonRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.three },
+  link: { marginTop: Spacing.three, alignSelf: 'flex-start', paddingVertical: Spacing.one },
+  buttonRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.four },
   primaryBtn: {
     backgroundColor: Accent,
     borderRadius: Radii.none,
     paddingVertical: Spacing.three,
     alignItems: 'center',
   },
-  btnDisabled: { opacity: 0.5 },
+  btnDisabled: { opacity: 0.45 },
   primaryBtnText: {
     color: AccentInk,
-    fontWeight: '700',
-    fontSize: 14,
-    letterSpacing: 0.8,
+    fontSize: 15,
+    lineHeight: 20,
+    letterSpacing: 0.4,
   },
   input: {
     borderWidth: BorderWidth,
     borderRadius: Radii.none,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
     fontSize: 16,
-    minHeight: 60,
+    minHeight: 72,
     textAlignVertical: 'top',
   },
   statusBox: {
+    padding: Spacing.four,
+    borderRadius: Radii.none,
+    borderWidth: BorderWidth,
+    marginTop: Spacing.three,
+    gap: Spacing.two,
+  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  rowLabel: { width: 72 },
+  rowValue: { flex: 1 },
+  banner: {
     padding: Spacing.three,
     borderRadius: Radii.none,
     borderWidth: BorderWidth,
-    marginTop: Spacing.two,
-    gap: Spacing.one,
+    marginBottom: Spacing.four,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  banner: {
-    padding: Spacing.two,
-    borderRadius: Radii.none,
-    borderWidth: BorderWidth,
-    marginBottom: Spacing.three,
-  },
-  bannerError: { backgroundColor: 'rgba(255,59,74,0.08)' },
-  bannerOk: { backgroundColor: 'rgba(61,220,132,0.08)' },
   dangerBtn: {
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,

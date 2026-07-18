@@ -178,7 +178,7 @@ export default function AddRepoScreen() {
             value={form.url}
             onChangeText={onUrlChange}
             placeholder="https://github.com/you/vault.git"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -191,7 +191,7 @@ export default function AddRepoScreen() {
             value={form.name}
             onChangeText={onNameChange}
             placeholder="vault"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
           />
         </Field>
 
@@ -201,7 +201,7 @@ export default function AddRepoScreen() {
             value={form.branch}
             onChangeText={(v) => set('branch', v)}
             placeholder="remote default"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -216,7 +216,7 @@ export default function AddRepoScreen() {
             value={form.localPath}
             onChangeText={(v) => set('localPath', v)}
             placeholder={defaultLocalPath('vault')}
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -228,7 +228,7 @@ export default function AddRepoScreen() {
             value={form.token}
             onChangeText={(v) => set('token', v)}
             placeholder="ghp_xxxxxxxxxxxx"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
@@ -241,7 +241,7 @@ export default function AddRepoScreen() {
             value={form.username}
             onChangeText={(v) => set('username', v)}
             placeholder="x-access-token"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -253,7 +253,7 @@ export default function AddRepoScreen() {
             value={form.authorName}
             onChangeText={(v) => set('authorName', v)}
             placeholder="kilne-git"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
           />
         </Field>
 
@@ -263,7 +263,7 @@ export default function AddRepoScreen() {
             value={form.authorEmail}
             onChangeText={(v) => set('authorEmail', v)}
             placeholder="kilne-git@localhost"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.placeholder}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
@@ -275,7 +275,9 @@ export default function AddRepoScreen() {
             {saving ? (
               <ActivityIndicator color={AccentInk} />
             ) : (
-              <ThemedText style={styles.primaryBtnText}>clone & save</ThemedText>
+              <ThemedText type="label" style={styles.primaryBtnText}>
+                clone & save
+              </ThemedText>
             )}
           </Pressable>
         </View>
@@ -289,11 +291,11 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: BorderWidth,
     borderRadius: Radii.none,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
     fontSize: 16,
   },
-  actions: { paddingTop: Spacing.two },
+  actions: { paddingTop: Spacing.four },
   primaryBtn: {
     backgroundColor: Accent,
     paddingVertical: Spacing.three,
@@ -302,8 +304,5 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: {
     color: AccentInk,
-    fontWeight: '700',
-    fontSize: 14,
-    letterSpacing: 0.8,
   },
 })

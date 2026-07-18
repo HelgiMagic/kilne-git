@@ -3,7 +3,7 @@
 import { ActionButton } from '@/components/ActionButton'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Accent, BorderWidth, Danger, Radii, Spacing, Success } from '@/constants/theme'
+import { BorderWidth, Danger, Radii, Spacing } from '@/constants/theme'
 import { useTheme } from '@/hooks/use-theme'
 import { syncRepo } from '@/services/sync'
 import { displayLocalPath } from '@/services/storage'
@@ -31,6 +31,11 @@ export function RepoCard({ repo, onPress }: Props) {
   const busy = sync.kind === 'pulling' || sync.kind === 'pushing' || sync.kind === 'cloning'
   const isError = sync.kind === 'error'
 
+  const updatedAt =
+    sync.kind === 'done' || sync.kind === 'error'
+      ? sync.at
+      : repo.lastSyncedAt
+
   async function onSync() {
     try {
       await syncRepo(repo, defaultCommitMessage())
@@ -40,65 +45,92 @@ export function RepoCard({ repo, onPress }: Props) {
   }
 
   return (
-    <ThemedView
-      type="backgroundElement"
-      style={[styles.card, { borderColor: theme.border }]}
-    >
-      <Pressable onPress={onPress} disabled={onPress == null} style={styles.info}>
+    <ThemedView type="backgroundElement" style={styles.card}>
+      <Pressable
+        onPress={onPress}
+        disabled={onPress == null}
+        style={[styles.body, { borderColor: theme.border }]}
+      >
         <View style={styles.header}>
-          <ThemedText type="smallBold" numberOfLines={1} style={styles.name}>
+          <ThemedText type="heading" numberOfLines={1} style={styles.name}>
             {repo.name}
           </ThemedText>
-          <StatusPill kind={sync.kind} isError={isError} busy={busy} />
+          <StatusBadge kind={sync.kind} isError={isError} />
         </View>
 
         <ThemedText type="small" numberOfLines={1} themeColor="textSecondary">
-          {repo.url}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-          {repo.branch} · {shortPath(repo.localPath)}
+          {shortUrl(repo.url)}
         </ThemedText>
 
-        <View style={styles.meta}>
-          <ThemedText type="small" themeColor="textSecondary">
-            {SYNC_LABEL[sync.kind]}
-            {sync.kind === 'done' || sync.kind === 'error'
-              ? ` · ${formatRelative(sync.at)}`
-              : repo.lastSyncedAt != null
-                ? ` · ${formatRelative(repo.lastSyncedAt)}`
-                : ''}
-          </ThemedText>
+        <ThemedText type="caption" themeColor="textMuted" numberOfLines={1} style={styles.meta}>
+          {repo.branch || 'default'} · {shortPath(repo.localPath)}
+        </ThemedText>
+
+        <View style={styles.techRows}>
+          <TechRow
+            label="updated"
+            value={updatedAt != null ? formatRelative(updatedAt) : 'never'}
+          />
         </View>
 
         {sync.kind === 'error' && (
-          <ThemedText type="small" style={styles.error} numberOfLines={2}>
+          <ThemedText type="caption" style={styles.error} numberOfLines={2}>
             {sync.message}
           </ThemedText>
         )}
       </Pressable>
 
-      <View style={styles.buttonRow}>
-        <ActionButton
-          label="sync"
-          onPress={onSync}
-          disabled={busy}
-          loading={sync.kind === 'pulling' || sync.kind === 'pushing'}
-        />
-      </View>
+      <ActionButton
+        label="sync"
+        variant="solid"
+        onPress={onSync}
+        disabled={busy}
+        loading={busy}
+        flush
+      />
     </ThemedView>
   )
 }
 
-function StatusPill({ kind, isError, busy }: { kind: SyncState['kind']; isError: boolean; busy: boolean }) {
-  const color = isError ? Danger : busy ? Accent : Success
+function TechRow({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string
+  value: string
+  danger?: boolean
+}) {
   return (
-    <View style={[styles.pill, { borderColor: color }]}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
-      <ThemedText type="label" style={{ color, letterSpacing: 0.8 }}>
+    <View style={styles.techRow}>
+      <ThemedText type="small" themeColor="textMuted" style={styles.techLabel}>
+        {label}
+      </ThemedText>
+      <ThemedText
+        type="small"
+        themeColor={danger ? undefined : 'textSecondary'}
+        style={danger ? styles.error : undefined}
+      >
+        {value}
+      </ThemedText>
+    </View>
+  )
+}
+
+function StatusBadge({ kind, isError }: { kind: SyncState['kind']; isError: boolean }) {
+  const theme = useTheme()
+  const color = isError ? Danger : theme.textSecondary
+  return (
+    <View style={[styles.badge, { borderColor: color }]}>
+      <ThemedText type="label" style={{ color }}>
         {SYNC_LABEL[kind]}
       </ThemedText>
     </View>
   )
+}
+
+function shortUrl(url: string): string {
+  return url.replace(/^https?:\/\//, '').replace(/\.git$/, '')
 }
 
 function shortPath(path: string): string {
@@ -119,34 +151,43 @@ function formatRelative(iso: string): string {
 
 const styles = StyleSheet.create({
   card: {
-    padding: Spacing.three,
     borderRadius: Radii.none,
-    borderWidth: BorderWidth,
-    gap: Spacing.one,
+    overflow: 'hidden',
   },
-  info: { gap: Spacing.one },
+  body: {
+    borderTopWidth: BorderWidth,
+    borderLeftWidth: BorderWidth,
+    borderRightWidth: BorderWidth,
+    borderBottomWidth: 0,
+    padding: Spacing.four,
+    gap: Spacing.two,
+  },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: Spacing.three,
+    marginBottom: Spacing.one,
+  },
+  name: { flexShrink: 1 },
+  meta: { marginTop: Spacing.half },
+  techRows: {
+    marginTop: Spacing.three,
     gap: Spacing.two,
   },
-  name: { flexShrink: 1, fontSize: 16 },
-  meta: { marginTop: Spacing.one },
-  pill: {
+  techRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.half,
+    gap: Spacing.three,
+  },
+  techLabel: {
+    width: 64,
+  },
+  badge: {
     borderWidth: BorderWidth,
     borderRadius: Radii.none,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.half,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
-  dot: { width: 6, height: 6, borderRadius: Radii.none },
-  error: { color: Danger, marginTop: Spacing.one },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-    marginTop: Spacing.two,
-  },
+  error: { color: Danger },
 })

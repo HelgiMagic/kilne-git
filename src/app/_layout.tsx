@@ -65,11 +65,12 @@ export default function RootLayout() {
               headerShadowVisible: false,
               headerStyle: { backgroundColor: background },
               headerTintColor: text,
-              headerTitleStyle: { fontWeight: '700', color: text },
-              contentStyle: { paddingHorizontal: Spacing.three, backgroundColor: background },
+              headerTitleAlign: 'left',
+              headerTitleStyle: { fontWeight: '600', color: text, letterSpacing: 0.3 },
+              contentStyle: { paddingHorizontal: Spacing.four, backgroundColor: background },
             }}
           >
-            <Stack.Screen name="index" options={{ title: 'repositories' }} />
+            <Stack.Screen name="index" options={{ title: 'repositories', headerShown: false }} />
             <Stack.Screen name="add" options={{ title: 'add repository', presentation: 'modal' }} />
             <Stack.Screen name="repo/[id]" options={{ title: 'repository' }} />
           </Stack>
