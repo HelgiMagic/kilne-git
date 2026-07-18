@@ -13,9 +13,11 @@ interface Props {
 export function Field({ label, hint, children }: Props) {
   return (
     <View style={styles.container}>
-      <ThemedText type="smallBold">{label}</ThemedText>
+      <ThemedText type="label" themeColor="textSecondary">
+        {label}
+      </ThemedText>
       {hint != null && (
-        <ThemedText type="small" style={styles.hint}>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
           {hint}
         </ThemedText>
       )}
@@ -26,6 +28,6 @@ export function Field({ label, hint, children }: Props) {
 
 const styles = StyleSheet.create({
   container: { gap: Spacing.one, marginBottom: Spacing.three },
-  hint: { opacity: 0.7 },
+  hint: { opacity: 0.85 },
   value: { marginTop: Spacing.one },
 })

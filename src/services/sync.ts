@@ -20,7 +20,7 @@ function isBusy(state: ReturnType<typeof useStore.getState>['sync'][string]): bo
 function assertNotBusy(repoId: string) {
   const { sync } = useStore.getState()
   if (isBusy(sync[repoId])) {
-    throw new Error('Another sync is already in progress for this repository.')
+    throw new Error('another sync is already in progress for this repository.')
   }
 }
 
@@ -59,21 +59,21 @@ async function ensureRepoStorageAccess(repo: Repo): Promise<void> {
 }
 
 function pullDoneMessage(result: Awaited<ReturnType<typeof git.pull>>): string {
-  if (result.merged) return 'Merged and pushed upstream changes'
+  if (result.merged) return 'merged and pushed upstream changes'
   if (result.fastForwarded) {
     const n = Math.max(1, Math.round(result.commitsFetched))
-    return `Pulled ${n} commit${n === 1 ? '' : 's'} (fast-forward)`
+    return `pulled ${n} commit${n === 1 ? '' : 's'} (fast-forward)`
   }
-  if (result.commitsFetched === 0) return 'Sync complete'
-  return 'Pull complete'
+  if (result.commitsFetched === 0) return 'sync complete'
+  return 'pull complete'
 }
 
 function commitPushDoneMessage(result: Awaited<ReturnType<typeof git.commitAllAndPush>>): string {
   if (result.sha != null && result.filesChanged > 0) {
     const n = Math.round(result.filesChanged)
-    return `Committed ${n} file${n === 1 ? '' : 's'} (${result.sha.slice(0, 7)}) and pushed`
+    return `committed ${n} file${n === 1 ? '' : 's'} (${result.sha.slice(0, 7)}) and pushed`
   }
-  return 'Nothing new to commit — pushed current HEAD'
+  return 'nothing new to commit — pushed current head'
 }
 
 export async function pullRepo(repo: Repo): Promise<void> {
@@ -129,7 +129,7 @@ export async function pushRepo(repo: Repo): Promise<void> {
   useStore.getState().setSync(repo.id, { kind: 'pushing' })
   try {
     await git.push(repo)
-    setDone(repo.id, 'Pushed current HEAD (no new commit)')
+    setDone(repo.id, 'pushed current head (no new commit)')
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)
@@ -146,7 +146,7 @@ export async function cloneRepo(repo: Repo): Promise<void> {
     if (result.branch.length > 0 && result.branch !== 'HEAD' && result.branch !== repo.branch) {
       await useStore.getState().upsertRepo({ ...repo, branch: result.branch })
     }
-    setDone(repo.id, 'Clone complete')
+    setDone(repo.id, 'clone complete')
     await persistLastSynced(repo.id)
   } catch (e) {
     setError(repo.id, e)

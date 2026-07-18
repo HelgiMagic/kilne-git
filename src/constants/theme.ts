@@ -1,17 +1,19 @@
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#0A0A0A',
+    background: '#F4F4F0',
+    backgroundElement: '#FFFFFF',
+    backgroundSelected: '#E8E8E2',
+    textSecondary: '#5C5C56',
+    border: 'rgba(0,0,0,0.2)',
   },
   dark: {
-    text: '#ffffff',
+    text: '#FFFFFF',
     background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    backgroundElement: '#0A0A0A',
+    backgroundSelected: '#141414',
+    textSecondary: '#8A8A8A',
+    border: 'rgba(255,255,255,0.2)',
   },
 } as const
 
@@ -27,6 +29,18 @@ export const Spacing = {
   six: 64,
 } as const
 
-export const Accent = '#208AEF'
-export const Danger = '#B00020'
-export const Success = '#2E7D32'
+/** Neon lime — primary CTA fill (both themes). */
+export const Accent = '#C8FF00'
+
+/** Text / icons on lime fills. */
+export const AccentInk = '#0A0A0A'
+
+export const Danger = '#FF3B4A'
+export const Success = '#3DDC84'
+
+/** Sharp edges: zero radius everywhere. */
+export const Radii = {
+  none: 0,
+} as const
+
+export const BorderWidth = 1

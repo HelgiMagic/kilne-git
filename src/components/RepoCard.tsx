@@ -3,7 +3,8 @@
 import { ActionButton } from '@/components/ActionButton'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Accent, Danger, Spacing, Success } from '@/constants/theme'
+import { Accent, BorderWidth, Danger, Radii, Spacing, Success } from '@/constants/theme'
+import { useTheme } from '@/hooks/use-theme'
 import { syncRepo } from '@/services/sync'
 import { displayLocalPath } from '@/services/storage'
 import { useStore } from '@/store'
@@ -16,15 +17,16 @@ interface Props {
 }
 
 const SYNC_LABEL: Record<SyncState['kind'], string> = {
-  idle: 'Ready',
-  pulling: 'Pulling…',
-  pushing: 'Pushing…',
-  cloning: 'Cloning…',
-  done: 'Synced',
-  error: 'Sync error',
+  idle: 'ready',
+  pulling: 'pulling…',
+  pushing: 'pushing…',
+  cloning: 'cloning…',
+  done: 'synced',
+  error: 'sync error',
 }
 
 export function RepoCard({ repo, onPress }: Props) {
+  const theme = useTheme()
   const sync = useStore((s) => s.sync[repo.id] ?? IDLE_SYNC)
   const busy = sync.kind === 'pulling' || sync.kind === 'pushing' || sync.kind === 'cloning'
   const isError = sync.kind === 'error'
@@ -38,7 +40,10 @@ export function RepoCard({ repo, onPress }: Props) {
   }
 
   return (
-    <ThemedView type="backgroundElement" style={styles.card}>
+    <ThemedView
+      type="backgroundElement"
+      style={[styles.card, { borderColor: theme.border }]}
+    >
       <Pressable onPress={onPress} disabled={onPress == null} style={styles.info}>
         <View style={styles.header}>
           <ThemedText type="smallBold" numberOfLines={1} style={styles.name}>
@@ -47,15 +52,15 @@ export function RepoCard({ repo, onPress }: Props) {
           <StatusPill kind={sync.kind} isError={isError} busy={busy} />
         </View>
 
-        <ThemedText type="small" numberOfLines={1} style={styles.url}>
+        <ThemedText type="small" numberOfLines={1} themeColor="textSecondary">
           {repo.url}
         </ThemedText>
-        <ThemedText type="small" numberOfLines={1}>
+        <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
           {repo.branch} · {shortPath(repo.localPath)}
         </ThemedText>
 
         <View style={styles.meta}>
-          <ThemedText type="small">
+          <ThemedText type="small" themeColor="textSecondary">
             {SYNC_LABEL[sync.kind]}
             {sync.kind === 'done' || sync.kind === 'error'
               ? ` · ${formatRelative(sync.at)}`
@@ -74,7 +79,7 @@ export function RepoCard({ repo, onPress }: Props) {
 
       <View style={styles.buttonRow}>
         <ActionButton
-          label="Sync"
+          label="sync"
           onPress={onSync}
           disabled={busy}
           loading={sync.kind === 'pulling' || sync.kind === 'pushing'}
@@ -89,7 +94,7 @@ function StatusPill({ kind, isError, busy }: { kind: SyncState['kind']; isError:
   return (
     <View style={[styles.pill, { borderColor: color }]}>
       <View style={[styles.dot, { backgroundColor: color }]} />
-      <ThemedText type="small" style={{ color }}>
+      <ThemedText type="label" style={{ color, letterSpacing: 0.8 }}>
         {SYNC_LABEL[kind]}
       </ThemedText>
     </View>
@@ -115,7 +120,8 @@ function formatRelative(iso: string): string {
 const styles = StyleSheet.create({
   card: {
     padding: Spacing.three,
-    borderRadius: 14,
+    borderRadius: Radii.none,
+    borderWidth: BorderWidth,
     gap: Spacing.one,
   },
   info: { gap: Spacing.one },
@@ -126,18 +132,17 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   name: { flexShrink: 1, fontSize: 16 },
-  url: { opacity: 0.7 },
   meta: { marginTop: Spacing.one },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.half,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: Spacing.one,
+    borderWidth: BorderWidth,
+    borderRadius: Radii.none,
+    paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.half,
   },
-  dot: { width: 6, height: 6, borderRadius: 3 },
+  dot: { width: 6, height: 6, borderRadius: Radii.none },
   error: { color: Danger, marginTop: Spacing.one },
   buttonRow: {
     flexDirection: 'row',

@@ -174,12 +174,12 @@ export async function requireSharedStorageAccess(pathOrUri: string): Promise<voi
 /** Alert + open the All files access Settings screen. */
 export function promptSharedStorageAccess(onOpened?: () => void): void {
   Alert.alert(
-    'All files access needed',
-    'kilne-git must see files created by Obsidian (new notes and photos). Android has no normal permission popup — enable “All files access” (or “Allow access to manage all files”) for kilne-git, then try again.',
+    'all files access needed',
+    'kilne-git must see files created by obsidian (new notes and photos). android has no normal permission popup — enable “all files access” (or “allow access to manage all files”) for kilne-git, then try again.',
     [
-      { text: 'Cancel', style: 'cancel' },
+      { text: 'cancel', style: 'cancel' },
       {
-        text: 'Open settings',
+        text: 'open settings',
         onPress: () => {
           void openAllFilesAccessSettings().then(() => onOpened?.())
         },

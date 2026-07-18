@@ -1,12 +1,12 @@
 import { Link, useFocusEffect, useRouter } from 'expo-router'
 import { useCallback } from 'react'
-import { ActivityIndicator, FlatList, Platform, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
 import { RepoCard } from '@/components/RepoCard'
-import { Accent, Spacing } from '@/constants/theme'
+import { Accent, AccentInk, Radii, Spacing } from '@/constants/theme'
 import { useStore } from '@/store'
 
 export default function RepoListScreen() {
@@ -25,7 +25,7 @@ export default function RepoListScreen() {
   if (!hydrated) {
     return (
       <ThemedView style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={Accent} />
       </ThemedView>
     )
   }
@@ -50,17 +50,21 @@ export default function RepoListScreen() {
         ListEmptyComponent={() => (
           <View style={styles.empty}>
             <ThemedText type="title" style={{ textAlign: 'center' }}>
-              No repositories yet
+              no repositories yet
             </ThemedText>
-            <ThemedText type="small" style={{ textAlign: 'center', marginTop: Spacing.two }}>
-              Add your Obsidian vault git remote to start syncing.
+            <ThemedText
+              type="small"
+              themeColor="textSecondary"
+              style={{ textAlign: 'center', marginTop: Spacing.two }}
+            >
+              add your obsidian vault git remote to start syncing.
             </ThemedText>
           </View>
         )}
       />
 
       <Link href="/add" style={[styles.fab, { bottom: insets.bottom + Spacing.three }]}>
-        <ThemedText style={styles.fabText}>+ Add</ThemedText>
+        <ThemedText style={styles.fabText}>+ add</ThemedText>
       </Link>
     </ThemedView>
   )
@@ -76,11 +80,12 @@ const styles = StyleSheet.create({
     backgroundColor: Accent,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
-    borderRadius: 999,
-    ...Platform.select({
-      android: { elevation: 4 },
-      ios: { shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
-    }),
+    borderRadius: Radii.none,
   },
-  fabText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  fabText: {
+    color: AccentInk,
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.8,
+  },
 })

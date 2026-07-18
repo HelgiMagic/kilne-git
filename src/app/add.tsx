@@ -14,7 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Field } from '@/components/Field'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Accent, Spacing } from '@/constants/theme'
+import { Accent, AccentInk, BorderWidth, Radii, Spacing } from '@/constants/theme'
+import { useTheme } from '@/hooks/use-theme'
 import { useStore } from '@/store'
 import { type Repo } from '@/types/repo'
 import { cloneRepo } from '@/services/sync'
@@ -53,6 +54,7 @@ function isAutoLocalPath(path: string, name: string): boolean {
 
 export default function AddRepoScreen() {
   const insets = useSafeAreaInsets()
+  const theme = useTheme()
   const upsertRepo = useStore((s) => s.upsertRepo)
   const setRepoToken = useStore((s) => s.setRepoToken)
   const [saving, setSaving] = useState(false)
@@ -97,7 +99,7 @@ export default function AddRepoScreen() {
     const name = form.name.trim() || deriveName(form.url)
     const localPathInput = form.localPath.trim() || defaultLocalPath(name)
     if (form.url.trim().length === 0) {
-      Alert.alert('Missing fields', 'URL is required.')
+      Alert.alert('missing fields', 'url is required.')
       return
     }
 
@@ -142,7 +144,7 @@ export default function AddRepoScreen() {
         // ensureRepoStorageAccess / pre-check already showed the Settings alert
       } else {
         Alert.alert(
-          'Clone failed',
+          'clone failed',
           e instanceof Error ? e.message : String(e),
         )
       }
@@ -150,6 +152,15 @@ export default function AddRepoScreen() {
       setSaving(false)
     }
   }
+
+  const inputStyle = [
+    styles.input,
+    {
+      borderColor: theme.border,
+      color: theme.text,
+      backgroundColor: theme.backgroundElement,
+    },
+  ]
 
   return (
     <ThemedView style={styles.container}>
@@ -161,90 +172,98 @@ export default function AddRepoScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Field label="Clone URL" hint="HTTPS URL, e.g. https://github.com/you/vault.git">
+        <Field label="clone url" hint="https url, e.g. https://github.com/you/vault.git">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.url}
             onChangeText={onUrlChange}
             placeholder="https://github.com/you/vault.git"
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
           />
         </Field>
 
-        <Field label="Display name" hint="Shown in the repo list.">
+        <Field label="display name" hint="shown in the repo list.">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.name}
             onChangeText={onNameChange}
             placeholder="vault"
+            placeholderTextColor={theme.textSecondary}
           />
         </Field>
 
-        <Field label="Branch" hint="Leave empty to use the remote default (main, master, …).">
+        <Field label="branch" hint="leave empty to use the remote default (main, master, …).">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.branch}
             onChangeText={(v) => set('branch', v)}
             placeholder="remote default"
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
           />
         </Field>
 
         <Field
-          label="Local path"
-          hint="Under phone storage — e.g. Documents/my-vault. On Android 11+ the app will ask you to enable All files access in Settings (required so new Obsidian files are visible to git)."
+          label="local path"
+          hint="under phone storage — e.g. documents/my-vault. on android 11+ the app will ask you to enable all files access in settings (required so new obsidian files are visible to git)."
         >
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.localPath}
             onChangeText={(v) => set('localPath', v)}
             placeholder={defaultLocalPath('vault')}
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
           />
         </Field>
 
-        <Field label="Personal access token" hint="GitHub: Settings → Developer settings → Personal access tokens. Select 'repo' scope.">
+        <Field label="personal access token" hint="github: settings → developer settings → personal access tokens. select 'repo' scope.">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.token}
             onChangeText={(v) => set('token', v)}
             placeholder="ghp_xxxxxxxxxxxx"
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
           />
         </Field>
 
-        <Field label="Username" hint="For GitHub tokens, anything works — defaults to x-access-token.">
+        <Field label="username" hint="for github tokens, anything works — defaults to x-access-token.">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.username}
             onChangeText={(v) => set('username', v)}
             placeholder="x-access-token"
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
           />
         </Field>
 
-        <Field label="Author name">
+        <Field label="author name">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.authorName}
             onChangeText={(v) => set('authorName', v)}
             placeholder="kilne-git"
+            placeholderTextColor={theme.textSecondary}
           />
         </Field>
 
-        <Field label="Author email">
+        <Field label="author email">
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             value={form.authorEmail}
             onChangeText={(v) => set('authorEmail', v)}
             placeholder="kilne-git@localhost"
+            placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
@@ -254,9 +273,9 @@ export default function AddRepoScreen() {
         <View style={styles.actions}>
           <Pressable style={styles.primaryBtn} onPress={onSave} disabled={saving}>
             {saving ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={AccentInk} />
             ) : (
-              <ThemedText style={styles.primaryBtnText}>Clone & save</ThemedText>
+              <ThemedText style={styles.primaryBtnText}>clone & save</ThemedText>
             )}
           </Pressable>
         </View>
@@ -268,9 +287,8 @@ export default function AddRepoScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderWidth: BorderWidth,
+    borderRadius: Radii.none,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.two,
     fontSize: 16,
@@ -279,8 +297,13 @@ const styles = StyleSheet.create({
   primaryBtn: {
     backgroundColor: Accent,
     paddingVertical: Spacing.three,
-    borderRadius: 10,
+    borderRadius: Radii.none,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  primaryBtnText: {
+    color: AccentInk,
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.8,
+  },
 })

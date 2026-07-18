@@ -15,7 +15,16 @@ import { ActionButton } from '@/components/ActionButton'
 import { Field } from '@/components/Field'
 import { ThemedText } from '@/components/themed-text'
 import { ThemedView } from '@/components/themed-view'
-import { Accent, Danger, Spacing, Success } from '@/constants/theme'
+import {
+  Accent,
+  AccentInk,
+  BorderWidth,
+  Danger,
+  Radii,
+  Spacing,
+  Success,
+} from '@/constants/theme'
+import { useTheme } from '@/hooks/use-theme'
 import * as git from '@/services/git'
 import { commitAndPushRepo, pullRepo, pushRepo } from '@/services/sync'
 import {
@@ -33,6 +42,7 @@ export default function RepoDetailScreen() {
   const params = useGlobalSearchParams<{ id: string }>()
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const theme = useTheme()
 
   const repo = useStore((s) => s.repos.find((r) => r.id === params.id))
   const sync = useStore((s) => (repo ? (s.sync[repo.id] ?? IDLE_SYNC) : IDLE_SYNC))
@@ -50,9 +60,9 @@ export default function RepoDetailScreen() {
   if (repo == null) {
     return (
       <ThemedView style={styles.center}>
-        <ThemedText>Repository not found.</ThemedText>
+        <ThemedText>repository not found.</ThemedText>
         <Pressable onPress={() => router.replace('/')} style={styles.link}>
-          <ThemedText style={{ color: Accent }}>Back to list</ThemedText>
+          <ThemedText style={{ color: Accent }}>back to list</ThemedText>
         </Pressable>
       </ThemedView>
     )
@@ -111,12 +121,12 @@ export default function RepoDetailScreen() {
   async function onRemove() {
     if (!repo) return
     Alert.alert(
-      'Remove repository?',
-      `This deletes the config and stored token. The cloned files at ${displayLocalPath(repo.localPath)} stay on disk.`,
+      'remove repository?',
+      `this deletes the config and stored token. the cloned files at ${displayLocalPath(repo.localPath)} stay on disk.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'cancel', style: 'cancel' },
         {
-          text: 'Remove',
+          text: 'remove',
           style: 'destructive',
           onPress: async () => {
             await removeRepo(repo.id)
@@ -136,28 +146,36 @@ export default function RepoDetailScreen() {
       showsVerticalScrollIndicator={false}
     >
       <ThemedText type="title">{repo.name}</ThemedText>
-      <ThemedText type="small" style={{ opacity: 0.7, marginBottom: Spacing.three }}>
+      <ThemedText type="small" themeColor="textSecondary" style={{ marginBottom: Spacing.three }}>
         {repo.url}
       </ThemedText>
 
       <SyncBanner kind={sync.kind} message={'message' in sync ? sync.message : ''} />
 
       <View style={styles.buttonRow}>
-        <ActionButton label="Pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
+        <ActionButton label="pull" onPress={onPull} disabled={busy} loading={sync.kind === 'pulling'} />
         <ActionButton
-          label="Push only"
+          label="push only"
           onPress={onPush}
           disabled={busy}
           loading={sync.kind === 'pushing'}
         />
       </View>
 
-      <Field label="Commit message" hint="Optional. Auto-generated when left blank.">
+      <Field label="commit message" hint="optional. auto-generated when left blank.">
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            {
+              borderColor: theme.border,
+              color: theme.text,
+              backgroundColor: theme.backgroundElement,
+            },
+          ]}
           value={commitMessage}
           onChangeText={setCommitMessage}
           placeholder="auto: sync from android"
+          placeholderTextColor={theme.textSecondary}
           autoCapitalize="none"
           autoCorrect={false}
           multiline
@@ -169,45 +187,54 @@ export default function RepoDetailScreen() {
         onPress={onCommitAndPush}
         disabled={busy}
       >
-        <ThemedText style={styles.primaryBtnText}>Commit all & push</ThemedText>
+        <ThemedText style={styles.primaryBtnText}>commit all & push</ThemedText>
       </Pressable>
 
       <View style={{ height: Spacing.four }} />
 
-      <ThemedText type="smallBold">Status</ThemedText>
+      <ThemedText type="label" themeColor="textSecondary">
+        status
+      </ThemedText>
       {statusLoading ? (
-        <ActivityIndicator style={{ marginTop: Spacing.two }} />
+        <ActivityIndicator color={Accent} style={{ marginTop: Spacing.two }} />
       ) : status == null ? (
-        <ThemedText type="small" style={{ marginTop: Spacing.two }}>
-          Status unavailable. If this vault is on phone storage, enable All files access, then Refresh.
+        <ThemedText type="small" themeColor="textSecondary" style={{ marginTop: Spacing.two }}>
+          status unavailable. if this vault is on phone storage, enable all files access, then refresh.
         </ThemedText>
       ) : (
         <StatusView status={status} />
       )}
 
       <Pressable onPress={() => void refreshStatus({ promptIfDenied: true })} style={styles.link}>
-        <ThemedText style={{ color: Accent }}>Refresh status</ThemedText>
+        <ThemedText style={{ color: Accent }}>refresh status</ThemedText>
       </Pressable>
 
       <View style={{ height: Spacing.four }} />
-      <Pressable onPress={onRemove} style={styles.dangerBtn}>
-        <ThemedText style={{ color: Danger }}>Remove repository</ThemedText>
+      <Pressable
+        onPress={onRemove}
+        style={[styles.dangerBtn, { borderColor: Danger }]}
+      >
+        <ThemedText style={{ color: Danger, fontWeight: '600' }}>remove repository</ThemedText>
       </Pressable>
     </ScrollView>
   )
 }
 
 function StatusView({ status }: { status: StatusResult }) {
+  const theme = useTheme()
   return (
-    <ThemedView type="backgroundElement" style={styles.statusBox}>
-      <Row label="Branch" value={status.head ?? '(detached HEAD)'} />
-      <Row label="Upstream" value={status.upstream ?? '(none)'} />
-      <Row label="Clean" value={status.isClean ? 'yes' : 'no'} />
-      <Row label="Ahead" value={String(status.ahead)} />
-      <Row label="Behind" value={String(status.behind)} />
+    <ThemedView
+      type="backgroundElement"
+      style={[styles.statusBox, { borderColor: theme.border }]}
+    >
+      <Row label="branch" value={status.head ?? '(detached head)'} />
+      <Row label="upstream" value={status.upstream ?? '(none)'} />
+      <Row label="clean" value={status.isClean ? 'yes' : 'no'} />
+      <Row label="ahead" value={String(status.ahead)} />
+      <Row label="behind" value={String(status.behind)} />
       {status.staged.length > 0 && (
         <>
-          <Section title="Staged" />
+          <Section title="staged" />
           {status.staged.map((s) => (
             <ThemedText key={'s-' + s.path} type="small" numberOfLines={1}>
               {s.path} ({s.index})
@@ -217,7 +244,7 @@ function StatusView({ status }: { status: StatusResult }) {
       )}
       {status.working.length > 0 && (
         <>
-          <Section title="Working tree" />
+          <Section title="working tree" />
           {status.working.map((s) => (
             <ThemedText key={'w-' + s.path} type="small" numberOfLines={1}>
               {s.path} ({s.worktree})
@@ -227,7 +254,7 @@ function StatusView({ status }: { status: StatusResult }) {
       )}
       {status.untracked.length > 0 && (
         <>
-          <Section title="Untracked" />
+          <Section title="untracked" />
           {status.untracked.map((p) => (
             <ThemedText key={'u-' + p} type="small" numberOfLines={1}>
               {p}
@@ -237,7 +264,7 @@ function StatusView({ status }: { status: StatusResult }) {
       )}
       {status.conflicted.length > 0 && (
         <>
-          <Section title="Conflicted" />
+          <Section title="conflicted" />
           {status.conflicted.map((p) => (
             <ThemedText key={'c-' + p} type="small" style={{ color: Danger }} numberOfLines={1}>
               {p}
@@ -252,7 +279,7 @@ function StatusView({ status }: { status: StatusResult }) {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
-      <ThemedText type="small" style={{ opacity: 0.7 }}>
+      <ThemedText type="small" themeColor="textSecondary">
         {label}
       </ThemedText>
       <ThemedText type="small">{value}</ThemedText>
@@ -262,7 +289,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function Section({ title }: { title: string }) {
   return (
-    <ThemedText type="smallBold" style={{ marginTop: Spacing.two, marginBottom: Spacing.one }}>
+    <ThemedText type="label" themeColor="textSecondary" style={{ marginTop: Spacing.two, marginBottom: Spacing.one }}>
       {title}
     </ThemedText>
   )
@@ -274,7 +301,13 @@ function SyncBanner({ kind, message }: { kind: string; message: string }) {
   }
   const isError = kind === 'error'
   return (
-    <View style={[styles.banner, isError ? styles.bannerError : styles.bannerOk]}>
+    <View
+      style={[
+        styles.banner,
+        { borderColor: isError ? Danger : Success },
+        isError ? styles.bannerError : styles.bannerOk,
+      ]}
+    >
       <ThemedText style={{ color: isError ? Danger : Success }}>{message}</ThemedText>
     </View>
   )
@@ -286,33 +319,47 @@ const styles = StyleSheet.create({
   buttonRow: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.three },
   primaryBtn: {
     backgroundColor: Accent,
-    borderRadius: 10,
+    borderRadius: Radii.none,
     paddingVertical: Spacing.three,
     alignItems: 'center',
   },
   btnDisabled: { opacity: 0.5 },
-  primaryBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  primaryBtnText: {
+    color: AccentInk,
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.8,
+  },
   input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
+    borderWidth: BorderWidth,
+    borderRadius: Radii.none,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.two,
     fontSize: 16,
     minHeight: 60,
+    textAlignVertical: 'top',
   },
   statusBox: {
     padding: Spacing.three,
-    borderRadius: 12,
+    borderRadius: Radii.none,
+    borderWidth: BorderWidth,
     marginTop: Spacing.two,
     gap: Spacing.one,
   },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
-  banner: { padding: Spacing.two, borderRadius: 8, marginBottom: Spacing.three },
-  bannerError: { backgroundColor: 'rgba(176,0,32,0.08)' },
-  bannerOk: { backgroundColor: 'rgba(46,125,50,0.08)' },
+  banner: {
+    padding: Spacing.two,
+    borderRadius: Radii.none,
+    borderWidth: BorderWidth,
+    marginBottom: Spacing.three,
+  },
+  bannerError: { backgroundColor: 'rgba(255,59,74,0.08)' },
+  bannerOk: { backgroundColor: 'rgba(61,220,132,0.08)' },
   dangerBtn: {
     paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
     alignSelf: 'flex-start',
+    borderWidth: BorderWidth,
+    borderRadius: Radii.none,
   },
 })

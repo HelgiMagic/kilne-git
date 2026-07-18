@@ -189,7 +189,7 @@ export async function ensureDirectoryExists(pathOrUri: string): Promise<void> {
 
 /** Thrown when shared storage is not usable (All files access missing). */
 export const SHARED_STORAGE_ACCESS_ERROR =
-  'All files access is required. Enable “All files access” for kilne-git in system settings, then try again.'
+  'all files access is required. enable “all files access” for kilne-git in system settings, then try again.'
 
 /**
  * Walk up from `absPath` until an existing ancestor is found, then create the
